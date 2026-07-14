@@ -3,10 +3,10 @@
   "private": true,
   "license": "MIT",
   "workspaces": [
-    "packages/*"
+    "packages/desktop",
+    "packages/shared"
   ],
   "scripts": {
-    "dev:mobile": "turbo run dev --filter=@photo-manager/mobile",
     "dev:desktop": "turbo run dev --filter=@photo-manager/desktop",
     "build": "turbo run build",
     "lint": "turbo run lint",
@@ -16,10 +16,12 @@
     "icons:audit": "node packages/desktop/scripts/audit-icons.cjs"
   },
   "overrides": {
-    "react-native-gesture-handler": "2.16.2"
+    "path-to-regexp": "0.1.13"
   },
   "devDependencies": {
+    "@typescript-eslint/parser": "^8.64.0",
     "eslint": "^8.57.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "turbo": "^2.0.0",
     "typescript": "^5.4.0"
   },

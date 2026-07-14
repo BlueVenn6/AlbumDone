@@ -1,6 +1,8 @@
 # AlbumDone
 
-AlbumDone is a local-first photo organization tool for desktop, with mobile work in progress. It focuses on photo cleanup, duplicate review, screenshot organization, and optional AI-assisted screenshot understanding.
+AlbumDone is a local-first desktop photo organization tool. It focuses on photo cleanup, duplicate review, screenshot organization, and optional AI-assisted screenshot understanding.
+
+This repository is the verified Windows desktop source release. Android and iOS are not included because they have not completed independent device acceptance testing.
 
 ## Local-First Behavior
 
@@ -58,12 +60,6 @@ Run desktop typecheck:
 npm --workspace @photo-manager/desktop run typecheck
 ```
 
-Run mobile typecheck:
-
-```bash
-npm --workspace @photo-manager/mobile run typecheck
-```
-
 Run all workspace checks:
 
 ```bash
@@ -87,26 +83,15 @@ npm --workspace @photo-manager/desktop run package
 
 The packaging command removes generated Desktop/Shared outputs, rebuilds Shared before Desktop, embeds a source fingerprint, and creates one uniquely named NSIS installer.
 
-Run the mobile web build locally:
-
-```bash
-npm run dev:mobile
-npm --workspace @photo-manager/mobile run web:build
-```
-
 ### Ports And Local Services
 
 The default ports are defined in `packages/shared/src/config/ports.ts` and mirrored in `.env.example`. Electron main process code mirrors the same env names in `packages/desktop/src/main/ports.ts` because its TypeScript build is scoped to the desktop package.
 
 - Desktop renderer dev server: `5173`
-- Mobile web dev server: `5183`
-- Mobile web preview server: `5184`
 - Desktop LAN sharing server: `7842`, with `7843` fallback if occupied
 - Desktop local OpenAI-compatible endpoint default: `http://localhost:11434/v1`
 
 OpenAI official configuration defaults to Base URL `https://api.openai.com/v1`, endpoint `/responses`, and model `gpt-5.5`. Users must provide their own API key in Settings.
-
-Mobile builds accept cloud HTTPS model endpoints only. Desktop Custom Endpoint configuration remains user-controlled.
 
 ## License
 

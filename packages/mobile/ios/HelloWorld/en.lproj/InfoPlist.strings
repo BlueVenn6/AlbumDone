@@ -1,4 +1,0 @@
-"CFBundleDisplayName" = "AlbumDone";
-"NSPhotoLibraryUsageDescription" = "AlbumDone needs access to your photos to browse albums, organize photos, and create year-in-review images.";
-"NSPhotoLibraryAddUsageDescription" = "AlbumDone needs permission to save generated images back to your photo library.";
-"NSCameraUsageDescription" = "AlbumDone may use the camera for future photo capture features.";
