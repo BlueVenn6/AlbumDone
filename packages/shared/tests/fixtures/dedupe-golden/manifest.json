@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "generatedBy": "packages/shared/tests/generateDedupeGoldenFixtures.cjs",
+  "policy": "Only byte-identical files may be selected automatically for deletion.",
+  "cases": [
+    {
+      "id": "base",
+      "file": "base-scene.png",
+      "family": "exact",
+      "timestampOffsetMs": 0
+    },
+    {
+      "id": "exact-copy",
+      "file": "base-scene-copy.png",
+      "family": "exact",
+      "timestampOffsetMs": 1000
+    },
+    {
+      "id": "renamed-copy",
+      "file": "renamed-copy.png",
+      "family": "exact",
+      "timestampOffsetMs": 2000
+    },
+    {
+      "id": "jpeg-q94",
+      "file": "base-scene-q94.jpg",
+      "family": "recompressed",
+      "timestampOffsetMs": 3000
+    },
+    {
+      "id": "jpeg-q68",
+      "file": "base-scene-q68.jpg",
+      "family": "recompressed",
+      "timestampOffsetMs": 4000
+    },
+    {
+      "id": "resized",
+      "file": "base-scene-resized.png",
+      "family": "resized",
+      "timestampOffsetMs": 5000
+    },
+    {
+      "id": "rotated",
+      "file": "base-scene-rotated.png",
+      "family": "rotated",
+      "timestampOffsetMs": 6000
+    },
+    {
+      "id": "cropped",
+      "file": "base-scene-cropped.png",
+      "family": "cropped",
+      "timestampOffsetMs": 7000
+    },
+    {
+      "id": "burst-a",
+      "file": "burst-a.png",
+      "family": "burst",
+      "timestampOffsetMs": 8000
+    },
+    {
+      "id": "burst-b",
+      "file": "burst-b.png",
+      "family": "burst",
+      "timestampOffsetMs": 9000
+    },
+    {
+      "id": "screenshot-a",
+      "file": "screenshot-text-a.png",
+      "family": "screenshot-different-text",
+      "timestampOffsetMs": 10000
+    },
+    {
+      "id": "screenshot-b",
+      "file": "screenshot-text-b.png",
+      "family": "screenshot-different-text",
+      "timestampOffsetMs": 11000
+    },
+    {
+      "id": "pose-a",
+      "file": "person-pose-a.png",
+      "family": "pose",
+      "timestampOffsetMs": 12000
+    },
+    {
+      "id": "pose-b",
+      "file": "person-pose-b.png",
+      "family": "pose",
+      "timestampOffsetMs": 13000
+    },
+    {
+      "id": "different",
+      "file": "different-document.png",
+      "family": "different",
+      "timestampOffsetMs": 14000
+    }
+  ],
+  "exactContentGroups": [
+    [
+      "base",
+      "exact-copy",
+      "renamed-copy"
+    ]
+  ],
+  "neverAutoDeleteFamilies": [
+    "recompressed",
+    "resized",
+    "rotated",
+    "cropped",
+    "burst",
+    "screenshot-different-text",
+    "pose",
+    "different"
+  ]
+}

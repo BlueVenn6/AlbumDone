@@ -1,0 +1,4 @@
+"CFBundleDisplayName" = "正好相册";
+"NSPhotoLibraryUsageDescription" = "正好相册需要访问你的照片，用于浏览相册、整理照片和生成年度回顾图。";
+"NSPhotoLibraryAddUsageDescription" = "正好相册需要权限将生成的图片保存回相册。";
+"NSCameraUsageDescription" = "正好相册可能会在后续拍照功能中使用相机。";

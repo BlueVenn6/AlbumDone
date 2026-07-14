@@ -1,0 +1,79 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+        maven { url "https://mirrors.huaweicloud.com/repository/maven/" }
+        maven { url "https://maven.aliyun.com/repository/google" }
+        maven { url "https://maven.aliyun.com/repository/central" }
+        maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://oss.sonatype.org/content/repositories/snapshots/" }
+        maven { url "https://www.jitpack.io" }
+        maven { url "https://mirrors.huaweicloud.com/repository/maven/" }
+        maven { url "https://maven.aliyun.com/repository/google" }
+        maven { url "https://maven.aliyun.com/repository/central" }
+    }
+}
+
+rootProject.name = 'PhotoManager'
+
+def appRoot = file("..")
+def resolveNodeModuleFile = { String modulePath ->
+    def command = [
+        "node",
+        "--print",
+        "require.resolve(process.argv[1], { paths: [process.argv[2]] })",
+        modulePath,
+        appRoot.absolutePath
+    ]
+    def process = command.execute(null, rootDir)
+    def output = new StringBuffer()
+    def error = new StringBuffer()
+    process.consumeProcessOutput(output, error)
+    process.waitFor()
+    if (process.exitValue() != 0) {
+        throw new GradleException("Could not resolve ${modulePath}: ${error.toString().trim()}")
+    }
+    return file(output.toString().trim())
+}
+
+apply from: resolveNodeModuleFile("@react-native-community/cli-platform-android/native_modules.gradle")
+applyNativeModulesSettingsGradle(settings)
+include ':app'
+
+def reactNativeGradlePlugin = resolveNodeModuleFile("@react-native/gradle-plugin/package.json").parentFile
+def windowsArm64 = System.getProperty("os.name").toLowerCase().contains("windows") && [
+    System.getProperty("os.arch"),
+    System.getenv("PROCESSOR_ARCHITECTURE"),
+    System.getenv("PROCESSOR_ARCHITEW6432")
+].findAll { it != null }.any { it.toLowerCase().contains("arm64") || it.toLowerCase().contains("aarch64") }
+
+if (windowsArm64) {
+    def generatedPlugin = file("build/generated/react-native-gradle-plugin")
+    def prepareScript = file("../scripts/prepare-react-native-gradle-plugin.cjs")
+    def command = [
+        "node",
+        prepareScript.absolutePath,
+        reactNativeGradlePlugin.absolutePath,
+        generatedPlugin.absolutePath
+    ]
+    def process = command.execute(null, rootDir)
+    def output = new StringBuffer()
+    def error = new StringBuffer()
+    process.consumeProcessOutput(output, error)
+    process.waitFor()
+    if (process.exitValue() != 0) {
+        throw new GradleException("Could not prepare the React Native Gradle plugin for Windows ARM64: ${error.toString().trim()}")
+    }
+    reactNativeGradlePlugin = generatedPlugin
+}
+
+includeBuild(reactNativeGradlePlugin)

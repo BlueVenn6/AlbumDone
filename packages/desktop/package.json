@@ -1,0 +1,118 @@
+{
+  "name": "@photo-manager/desktop",
+  "version": "0.1.0",
+  "description": "AlbumDone - local-first photo manager",
+  "author": "AlbumDone",
+  "private": true,
+  "license": "MIT",
+  "main": "dist/main/index.js",
+  "build": {
+    "appId": "com.albumdone.app",
+    "productName": "AlbumDone",
+    "copyright": "Copyright © 2026 AlbumDone",
+    "electronVersion": "30.5.1",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "chi_sim.traineddata",
+        "to": "chi_sim.traineddata"
+      },
+      {
+        "from": "eng.traineddata",
+        "to": "eng.traineddata"
+      }
+    ],
+    "asarUnpack": [
+      "**/*.node",
+      "**/node_modules/better-sqlite3/**",
+      "**/node_modules/keytar/**",
+      "**/node_modules/canvas/**",
+      "**/node_modules/sharp/**",
+      "**/node_modules/@img/**"
+    ],
+    "npmRebuild": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${env.ALBUMDONE_BUILD_ID}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AlbumDone"
+    }
+  },
+  "scripts": {
+    "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "dev:main": "tsc --watch --project tsconfig.json --outDir dist",
+    "dev:renderer": "vite --config vite.config.ts",
+    "dev:electron": "wait-on http://localhost:5173 dist/main/index.js && cross-env NODE_ENV=development node scripts/start-electron.cjs",
+    "clean:package": "node scripts/clean-package.cjs",
+    "build:shared": "npm --prefix ../.. --workspace @photo-manager/shared run build",
+    "build": "npm run build:shared && npm run build:main && npm run build:renderer",
+    "build:main": "tsc --project tsconfig.json --outDir dist",
+    "build:renderer": "vite build --config vite.config.ts",
+    "electron": "cross-env NODE_ENV=development node scripts/start-electron.cjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx",
+    "test": "npm run build:main && node tests/asyncTimeout.test.cjs && node tests/yearInReviewMonthPlan.test.cjs && node tests/yearInReviewExport.test.cjs",
+    "package": "node scripts/package-desktop.cjs",
+    "package:dir": "npm run build && electron-builder --dir"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.82",
+    "@photo-manager/shared": "*",
+    "@vladmandic/face-api": "^1.7.15",
+    "better-sqlite3": "^9.6.0",
+    "electron-store": "^8.1.0",
+    "express": "^4.19.0",
+    "i18next": "^23.16.8",
+    "immer": "^10.2.0",
+    "keytar": "^7.9.0",
+    "qrcode": "^1.5.3",
+    "react": "^18.3.1",
+    "react-i18next": "^14.1.3",
+    "sharp": "^0.34.0",
+    "tesseract.js": "^7.0.0",
+    "ws": "^8.17.0",
+    "zustand": "^4.5.7"
+  },
+  "optionalDependencies": {
+    "canvas": "^3.2.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/express": "^4.17.21",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/ws": "^8.5.10",
+    "@vitejs/plugin-react": "^4.2.0",
+    "concurrently": "^8.2.0",
+    "cross-env": "^10.1.0",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.0",
+    "png-to-ico": "^2.1.8",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.23.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0",
+    "wait-on": "^9.0.4"
+  }
+}

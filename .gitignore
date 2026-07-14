@@ -1,0 +1,45 @@
+node_modules/
+dist/
+.turbo/
+build/
+.vite/
+coverage/
+*.log
+logs/
+crash-reports/
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example
+.env.local
+secrets.json
+config.local.json
+settings.local.json
+private/
+*.p8
+*.p12
+*.mobileprovision
+*.jks
+*.keystore
+packages/mobile/android/app/debug.keystore
+.idea/
+.agents/
+packages/*/dist/
+packages/*/.turbo/
+packages/*/node_modules/.vite/
+packages/*/.eas-inspect*/
+
+# Electron build output (large, regenerated)
+packages/desktop/release/
+release/
+
+# Android / Gradle caches
+packages/mobile/android/.gradle/
+packages/mobile/android/app/build/
+packages/mobile/android/build/
+.gradle/
+
+# Keep electron-builder buildResources (icons) tracked despite global build/ ignore
+!packages/desktop/build/
+!packages/desktop/build/**
