@@ -6,6 +6,14 @@ Built as a privacy-conscious windows-utility, it keeps core processing on the us
 
 This repository is the verified Windows desktop source release. Android and iOS are not included because they have not completed independent device acceptance testing.
 
+## System Requirements
+
+- Windows 10 or Windows 11 on an Intel or AMD x64 computer: natively supported.
+- Windows 11 on an ARM64 computer: supported through Windows x64 emulation. The current x64 release has been tested on a Microsoft SQ2 device, but it is not an ARM64-native build.
+- Windows 10 on ARM64 and 32-bit Windows: not supported by the current x64 release.
+
+The installer filename includes `x64`. A separate ARM64-native installer is not currently published.
+
 ## Local-First Behavior
 
 Core organization, duplicate detection, culling, and local archiving workflows are designed to run on the user's device.
