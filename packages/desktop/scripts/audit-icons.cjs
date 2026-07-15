@@ -89,11 +89,18 @@ async function inspectCollection(paths) {
 }
 
 async function main() {
+  const mobileAndroidRoot = path.join(repoRoot, 'packages/mobile/android/app/src/main/res');
+  const mobileIosRoot = path.join(repoRoot, 'packages/mobile/ios/HelloWorld/Images.xcassets/AppIcon.appiconset');
+  const hasMobileAssets = fs.existsSync(mobileAndroidRoot) && fs.existsSync(mobileIosRoot);
   const androidDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'];
-  const androidLegacy = await inspectCollection(androidDensities.map((density) =>
-    `packages/mobile/android/app/src/main/res/mipmap-${density}/ic_launcher.png`));
-  const androidRound = await inspectCollection(androidDensities.map((density) =>
-    `packages/mobile/android/app/src/main/res/mipmap-${density}/ic_launcher_round.png`));
+  const androidLegacy = hasMobileAssets
+    ? await inspectCollection(androidDensities.map((density) =>
+      `packages/mobile/android/app/src/main/res/mipmap-${density}/ic_launcher.png`))
+    : [];
+  const androidRound = hasMobileAssets
+    ? await inspectCollection(androidDensities.map((density) =>
+      `packages/mobile/android/app/src/main/res/mipmap-${density}/ic_launcher_round.png`))
+    : [];
   const iosFileNames = [
     'Icon-20x20@2x.png',
     'Icon-20x20@3x.png',
@@ -105,47 +112,54 @@ async function main() {
     'Icon-60x60@3x.png',
     'Icon-1024x1024@1x.png',
   ];
-  const ios = await inspectCollection(iosFileNames.map((fileName) =>
-    `packages/mobile/ios/HelloWorld/Images.xcassets/AppIcon.appiconset/${fileName}`));
+  const ios = hasMobileAssets
+    ? await inspectCollection(iosFileNames.map((fileName) =>
+      `packages/mobile/ios/HelloWorld/Images.xcassets/AppIcon.appiconset/${fileName}`))
+    : [];
   const assets = {
     master: await inspect('assets/branding/app-icon-master.png'),
     desktop: await inspect('packages/desktop/build/icon.png'),
-    androidLegacy,
-    androidRound,
-    androidAdaptiveBackground: await inspect('packages/mobile/android/app/src/main/res/drawable-nodpi/ic_launcher_background.png'),
-    androidAdaptiveForeground: await inspect('packages/mobile/android/app/src/main/res/drawable-nodpi/ic_launcher_foreground.png'),
-    ios,
+    ...(hasMobileAssets ? {
+      androidLegacy,
+      androidRound,
+      androidAdaptiveBackground: await inspect('packages/mobile/android/app/src/main/res/drawable-nodpi/ic_launcher_background.png'),
+      androidAdaptiveForeground: await inspect('packages/mobile/android/app/src/main/res/drawable-nodpi/ic_launcher_foreground.png'),
+      ios,
+    } : {}),
   };
   const desktopSubject = assets.desktop.subjectBounds;
   if (!desktopSubject) throw new Error('Desktop icon subject could not be measured.');
   assertMatchesDesktop(assets.master, desktopSubject, 'master');
-  assertMatchesDesktop(assets.androidAdaptiveBackground, desktopSubject, 'androidAdaptiveBackground');
-  for (const [index, asset] of assets.androidLegacy.entries()) {
-    assertMatchesDesktop(asset, desktopSubject, `androidLegacy.${androidDensities[index]}`);
-  }
-  for (const [index, asset] of assets.androidRound.entries()) {
-    assertMatchesDesktop(asset, desktopSubject, `androidRound.${androidDensities[index]}`);
-  }
-  for (const asset of assets.ios) {
-    assertMatchesDesktop(asset, desktopSubject, `ios.${path.basename(asset.path)}`);
-    if (!asset.alphaBounds
-      || asset.alphaBounds.pixels.minX !== 0
-      || asset.alphaBounds.pixels.minY !== 0
-      || asset.alphaBounds.pixels.maxX !== asset.width - 1
-      || asset.alphaBounds.pixels.maxY !== asset.height - 1) {
-      throw new Error(`${asset.path} is not fully opaque.`);
+  let adaptiveSafeZone = null;
+  if (hasMobileAssets) {
+    assertMatchesDesktop(assets.androidAdaptiveBackground, desktopSubject, 'androidAdaptiveBackground');
+    for (const [index, asset] of assets.androidLegacy.entries()) {
+      assertMatchesDesktop(asset, desktopSubject, `androidLegacy.${androidDensities[index]}`);
     }
-  }
-  const adaptiveSubject = assets.androidAdaptiveBackground.subjectBounds;
-  const adaptiveSafeZone = Boolean(
-    adaptiveSubject
-    && adaptiveSubject.margins.left >= 0.17
-    && adaptiveSubject.margins.right >= 0.17
-    && adaptiveSubject.margins.top >= 0.17
-    && adaptiveSubject.margins.bottom >= 0.17,
-  );
-  if (!adaptiveSafeZone) {
-    throw new Error('Android adaptive icon subject exceeds the central safe zone.');
+    for (const [index, asset] of assets.androidRound.entries()) {
+      assertMatchesDesktop(asset, desktopSubject, `androidRound.${androidDensities[index]}`);
+    }
+    for (const asset of assets.ios) {
+      assertMatchesDesktop(asset, desktopSubject, `ios.${path.basename(asset.path)}`);
+      if (!asset.alphaBounds
+        || asset.alphaBounds.pixels.minX !== 0
+        || asset.alphaBounds.pixels.minY !== 0
+        || asset.alphaBounds.pixels.maxX !== asset.width - 1
+        || asset.alphaBounds.pixels.maxY !== asset.height - 1) {
+        throw new Error(`${asset.path} is not fully opaque.`);
+      }
+    }
+    const adaptiveSubject = assets.androidAdaptiveBackground.subjectBounds;
+    adaptiveSafeZone = Boolean(
+      adaptiveSubject
+      && adaptiveSubject.margins.left >= 0.17
+      && adaptiveSubject.margins.right >= 0.17
+      && adaptiveSubject.margins.top >= 0.17
+      && adaptiveSubject.margins.bottom >= 0.17,
+    );
+    if (!adaptiveSafeZone) {
+      throw new Error('Android adaptive icon subject exceeds the central safe zone.');
+    }
   }
 
   const report = {
@@ -153,15 +167,18 @@ async function main() {
     masterSource: 'assets/branding/app-icon-master.png',
     visualReference: 'packages/desktop/build/icon.png',
     desktopBuildSource: 'packages/desktop/build/icon.ico',
-    androidManifest: {
+    mobileAssetsIncluded: hasMobileAssets,
+    androidManifest: hasMobileAssets ? {
       icon: '@mipmap/ic_launcher',
       roundIcon: '@mipmap/ic_launcher_round',
       adaptiveXmlPresent: fs.existsSync(path.join(
         repoRoot,
         'packages/mobile/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml',
       )),
-    },
-    iosAppIconSet: 'packages/mobile/ios/HelloWorld/Images.xcassets/AppIcon.appiconset/Contents.json',
+    } : null,
+    iosAppIconSet: hasMobileAssets
+      ? 'packages/mobile/ios/HelloWorld/Images.xcassets/AppIcon.appiconset/Contents.json'
+      : null,
     adaptiveSafeZone,
     assets,
   };

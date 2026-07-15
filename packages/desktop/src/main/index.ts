@@ -11,6 +11,10 @@ import { DESKTOP_PORTS } from './ports';
 const isDev = process.env.NODE_ENV === 'development';
 const RENDERER_DEV_URL = `http://localhost:${DESKTOP_PORTS.renderer}`;
 
+if (!app.isPackaged && process.env.ALBUMDONE_TEST_USER_DATA) {
+  app.setPath('userData', path.resolve(process.env.ALBUMDONE_TEST_USER_DATA));
+}
+
 let mainWindow: BrowserWindow | null = null;
 
 installMainProcessLogGuards();
@@ -140,7 +144,7 @@ app.whenReady().then(async () => {
   configureApplicationMenu();
 
   const testPhotoRoot = process.env.ALBUMDONE_TEST_PHOTO_ROOT;
-  if (isDev && testPhotoRoot) {
+  if (!app.isPackaged && testPhotoRoot) {
     const allowedTestRoot = addAllowedLocalFileRoot(testPhotoRoot);
     logger.info('main', 'Authorized development test photo root', allowedTestRoot);
   }

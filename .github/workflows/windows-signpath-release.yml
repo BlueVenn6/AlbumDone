@@ -11,8 +11,46 @@ permissions:
   contents: read
 
 jobs:
+  quality-gate:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      CI: true
+      TURBO_TELEMETRY_DISABLED: 1
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify release source
+        shell: pwsh
+        run: |
+          npm run lint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --workspace @photo-manager/desktop run test:e2e
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run icons:audit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm audit --omit=dev --audit-level=high
+
   build-sign-verify:
     if: vars.SIGNPATH_ENABLED == 'true'
+    needs: quality-gate
     runs-on: windows-latest
     timeout-minutes: 60
 

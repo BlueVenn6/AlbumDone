@@ -71,7 +71,9 @@
     "electron": "cross-env NODE_ENV=development node scripts/start-electron.cjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
-    "test": "npm run build:main && node tests/asyncTimeout.test.cjs && node tests/yearInReviewMonthPlan.test.cjs && node tests/yearInReviewExport.test.cjs",
+    "test": "npm run build:main && node tests/asyncTimeout.test.cjs && node tests/yearInReviewMonthPlan.test.cjs && node tests/yearInReviewExport.test.cjs && node tests/yearInReviewIpcContract.test.cjs",
+    "test:e2e": "node tests/electron.production.e2e.cjs",
+    "benchmark:reproducible": "node scripts/benchmark-reproducible.cjs",
     "package": "node scripts/package-desktop.cjs",
     "package:dir": "npm run build && electron-builder --dir"
   },
@@ -108,6 +110,7 @@
     "cross-env": "^10.1.0",
     "electron": "^30.0.0",
     "electron-builder": "^24.13.0",
+    "playwright-core": "^1.61.1",
     "png-to-ico": "^2.1.8",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.23.0",

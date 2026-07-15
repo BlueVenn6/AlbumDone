@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      CI: true
+      TURBO_TELEMETRY_DISABLED: 1
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and integration tests
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Electron production smoke test
+        run: npm --workspace @photo-manager/desktop run test:e2e
+
+      - name: Reproducible 100-photo benchmark
+        run: npm --workspace @photo-manager/desktop run benchmark:reproducible -- 100 test-results/performance-100.json
+
+      - name: Icon consistency audit
+        run: npm run icons:audit
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-failure-diagnostics-${{ github.run_id }}
+          path: |
+            packages/desktop/logs/**
+            packages/desktop/test-results/**
+            packages/desktop/playwright-report/**
+          if-no-files-found: ignore
+          retention-days: 7

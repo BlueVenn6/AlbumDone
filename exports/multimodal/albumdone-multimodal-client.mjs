@@ -1,5 +1,3 @@
-/* AlbumDone reusable multimodal provider client. Requires global fetch. Never bundle API keys. */
-
 // packages/shared/src/utils/httpUrl.ts
 var HTTP_URL_PATTERN = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]+)([^?#]*)?(\?[^#]*)?(?:#.*)?$/i;
 function trimTrailingSlashes(value) {
@@ -76,7 +74,6 @@ var PROVIDER_MODELS = {
     models: [
       "gemini-3.5-flash",
       "gemini-3.1-flash-image",
-      "gemini-3-pro-image-preview",
       "gemini-2.5-flash",
       "gemini-2.5-pro"
     ],

@@ -19,6 +19,7 @@ import { normalizeDesktopLocale, readSystemDisplayLocale } from './locale';
 import { logger, serializeError } from './logger';
 import { DESKTOP_PORTS } from './ports';
 import { raceWithTimeout } from './asyncTimeout';
+import { registerYearInReviewIpc } from './yearInReviewIpc';
 import {
   addAllowedLocalFileRoot,
   assertAllowedLocalFilePath,
@@ -571,6 +572,9 @@ function getThumbnailRoot(): string {
 }
 
 function getAppOutputRoot(): string {
+  if (!app.isPackaged && process.env.ALBUMDONE_TEST_OUTPUT_ROOT) {
+    return path.resolve(process.env.ALBUMDONE_TEST_OUTPUT_ROOT);
+  }
   return path.join(app.getPath('pictures'), 'AlbumDone');
 }
 
@@ -3275,57 +3279,18 @@ export function setupIpcHandlers(): void {
     return { success: true };
   });
 
-  safeHandle(
-    'yearInReview:generate',
-    async (
-      _event,
-      photos: Array<{
-        uri: string;
-        filename: string;
-        timestamp?: number;
-        width?: number;
-        height?: number;
-        fileSize?: number;
-        isScreenshot?: boolean;
-        thumbnailUri?: string;
-      }>,
-      timeMode: 'rolling' | 'calendar' = 'rolling',
-    ) => {
-      if (!Array.isArray(photos) || photos.length === 0 || photos.length > MAX_SCAN_PHOTOS) {
-        throw new Error(`Year In Review requires 1-${MAX_SCAN_PHOTOS} photos.`);
-      }
-      const safePhotos = photos.map((photo, index) => {
-        if (!photo || typeof photo !== 'object') {
-          throw new Error(`Invalid photo at index ${index}.`);
-        }
-        const allowedPath = assertImagePath(photo.uri, 'yearInReview');
-        let thumbnailUri: string | undefined;
-        if (photo.thumbnailUri) {
-          try {
-            thumbnailUri = toLocalFileUri(assertImagePath(photo.thumbnailUri, 'yearInReviewThumbnail'));
-          } catch {
-            thumbnailUri = undefined;
-          }
-        }
-        const safePhoto = {
-          uri: toLocalFileUri(allowedPath),
-          filename: assertString(photo.filename, `photos[${index}].filename`),
-          isScreenshot: photo.isScreenshot === true,
-        };
-        return {
-          ...safePhoto,
-          ...(Number.isFinite(photo.timestamp) ? { timestamp: Number(photo.timestamp) } : {}),
-          ...(Number.isFinite(photo.width) ? { width: Math.max(0, Math.round(Number(photo.width))) } : {}),
-          ...(Number.isFinite(photo.height) ? { height: Math.max(0, Math.round(Number(photo.height))) } : {}),
-          ...(Number.isFinite(photo.fileSize) ? { fileSize: Math.max(0, Math.round(Number(photo.fileSize))) } : {}),
-          ...(thumbnailUri ? { thumbnailUri } : {}),
-        };
-      });
-      const outputDir = getAppOutputRoot();
-      const locale = await getPreferredLocale();
-      return generateYearInReview(safePhotos, outputDir, timeMode, locale ?? 'en');
+  registerYearInReviewIpc({
+    safeHandle: (channel, handler) => {
+      safeHandle(channel, (event, ...args) => handler(event, ...args));
     },
-  );
+    maxScanPhotos: MAX_SCAN_PHOTOS,
+    assertImagePath,
+    assertString,
+    toLocalFileUri,
+    getOutputRoot: getAppOutputRoot,
+    getPreferredLocale,
+    generateYearInReview,
+  });
 
   // ----- LLM IPC bridge (avoids CORS in renderer) -----
 

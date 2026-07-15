@@ -117,3 +117,4 @@ checksum.
 ## User Documentation
 
 - [Bilingual user guide / 中英文使用指南](docs/USER_GUIDE.md)
+- [Reproducible performance benchmarks](docs/PERFORMANCE.md)

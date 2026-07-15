@@ -1,0 +1,64 @@
+name: Reproducible performance benchmark
+
+on:
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      size:
+        description: Synthetic gallery size
+        required: true
+        default: "1000"
+        type: choice
+        options:
+          - "100"
+          - "1000"
+          - "3000"
+          - "5000"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      CI: true
+      TURBO_TELEMETRY_DISABLED: 1
+      BENCHMARK_SIZE: ${{ inputs.size || '1000' }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build production application
+        run: npm --workspace @photo-manager/desktop run build
+
+      - name: Run benchmark
+        shell: pwsh
+        run: |
+          npm --workspace @photo-manager/desktop run benchmark:reproducible -- `
+            $env:BENCHMARK_SIZE `
+            "test-results/performance-$env:BENCHMARK_SIZE.json"
+
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-${{ env.BENCHMARK_SIZE }}-${{ github.run_id }}
+          path: test-results/performance-${{ env.BENCHMARK_SIZE }}.json
+          if-no-files-found: error
+          retention-days: 30
