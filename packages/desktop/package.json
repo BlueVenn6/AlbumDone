@@ -72,6 +72,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "npm run build:main && node tests/asyncTimeout.test.cjs && node tests/yearInReviewMonthPlan.test.cjs && node tests/yearInReviewExport.test.cjs && node tests/yearInReviewIpcContract.test.cjs",
+    "pretest:e2e": "electron-builder install-app-deps",
     "test:e2e": "node tests/electron.production.e2e.cjs",
     "benchmark:reproducible": "node scripts/benchmark-reproducible.cjs",
     "package": "node scripts/package-desktop.cjs",
