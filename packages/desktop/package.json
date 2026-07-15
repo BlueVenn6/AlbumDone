@@ -105,7 +105,7 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/ws": "^8.5.10",
-    "@vitejs/plugin-react": "^4.2.0",
+    "@vitejs/plugin-react": "^6.0.3",
     "concurrently": "^8.2.0",
     "cross-env": "^10.1.0",
     "electron": "^30.0.0",
