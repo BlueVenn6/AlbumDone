@@ -1,6 +1,8 @@
 # AlbumDone
 
-AlbumDone is a local-first desktop photo organization tool. It focuses on photo cleanup, duplicate review, screenshot organization, and optional AI-assisted screenshot understanding.
+AlbumDone is an open-source, local-first Windows utility for cleaning and organizing local photo libraries.
+It combines photo-cleaner, duplicate-photo-finder, and image-culling workflows with screenshot organization and optional AI-assisted understanding.
+Built as a privacy-conscious windows-utility, it keeps core processing on the user's computer and leaves deletion decisions under user review.
 
 This repository is the verified Windows desktop source release. Android and iOS are not included because they have not completed independent device acceptance testing.
 
