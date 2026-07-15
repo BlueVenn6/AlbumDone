@@ -1,0 +1,188 @@
+name: Windows SignPath release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build-sign-verify:
+    if: vars.SIGNPATH_ENABLED == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Require SignPath configuration
+        shell: pwsh
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          SIGNPATH_APP_CONFIG: ${{ vars.SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG }}
+          SIGNPATH_INSTALLER_CONFIG: ${{ vars.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
+        run: |
+          $required = @(
+            'SIGNPATH_API_TOKEN',
+            'SIGNPATH_ORGANIZATION_ID',
+            'SIGNPATH_PROJECT_SLUG',
+            'SIGNPATH_SIGNING_POLICY_SLUG',
+            'SIGNPATH_APP_CONFIG',
+            'SIGNPATH_INSTALLER_CONFIG'
+          )
+          $missing = $required | Where-Object {
+            [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_))
+          }
+          if ($missing) {
+            throw "Missing SignPath repository configuration: $($missing -join ', ')"
+          }
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build shared and desktop source
+        run: npm --workspace @photo-manager/desktop run build
+
+      - name: Create unsigned unpacked application
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force packages/desktop/release -ErrorAction SilentlyContinue
+          node node_modules/electron-builder/out/cli/cli.js --projectDir packages/desktop --win --x64 --dir
+          if (-not (Test-Path packages/desktop/release/win-unpacked/AlbumDone.exe)) {
+            throw 'Expected unpacked AlbumDone.exe was not created.'
+          }
+
+      - name: Upload unsigned application directory
+        id: upload-unsigned-app
+        uses: actions/upload-artifact@v7
+        with:
+          name: albumdone-unsigned-application
+          path: packages/desktop/release/win-unpacked
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign application executable
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-app.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: packages/desktop/release/signed-application
+
+      - name: Locate and verify signed application executable
+        id: signed-app
+        shell: pwsh
+        run: |
+          $app = Get-ChildItem packages/desktop/release/signed-application -Recurse -Filter AlbumDone.exe
+          if ($app.Count -ne 1) {
+            throw "Expected one signed AlbumDone.exe, found $($app.Count)."
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $app.FullName
+          if ($signature.Status -ne 'Valid') {
+            throw "Application signature is $($signature.Status): $($signature.StatusMessage)"
+          }
+          "directory=$($app.Directory.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Build unsigned NSIS installer from signed application
+        shell: pwsh
+        env:
+          ALBUMDONE_BUILD_ID: ${{ github.ref_name }}-${{ github.sha }}
+        run: |
+          node node_modules/electron-builder/out/cli/cli.js `
+            --projectDir packages/desktop `
+            --prepackaged '${{ steps.signed-app.outputs.directory }}' `
+            --win nsis `
+            --x64
+          $installers = Get-ChildItem packages/desktop/release -File -Filter '*.exe'
+          if ($installers.Count -ne 1) {
+            throw "Expected one unsigned installer, found $($installers.Count)."
+          }
+
+      - name: Upload unsigned installer
+        id: upload-unsigned-installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: albumdone-unsigned-installer
+          path: packages/desktop/release/AlbumDone-*.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign NSIS installer
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: release-final
+
+      - name: Verify final installer and write SHA-256
+        id: final-installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem release-final -Recurse -File -Filter 'AlbumDone-*.exe'
+          if ($installer.Count -ne 1) {
+            throw "Expected one signed installer, found $($installer.Count)."
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer.FullName
+          if ($signature.Status -ne 'Valid') {
+            throw "Installer signature is $($signature.Status): $($signature.StatusMessage)"
+          }
+          $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $installer.FullName
+          "$($hash.Hash)  $($installer.Name)" | Set-Content release-final/SHA256SUMS.txt
+          "path=$($installer.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Verify installed application signature
+        shell: pwsh
+        run: |
+          $installDirectory = Join-Path $env:RUNNER_TEMP 'AlbumDoneSignedInstall'
+          $installer = '${{ steps.final-installer.outputs.path }}'
+          $process = Start-Process -FilePath $installer `
+            -ArgumentList '/S', "/D=$installDirectory" `
+            -Wait `
+            -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Silent installation failed with exit code $($process.ExitCode)."
+          }
+          $installedApp = Join-Path $installDirectory 'AlbumDone.exe'
+          if (-not (Test-Path $installedApp)) {
+            throw 'The signed installer did not install AlbumDone.exe.'
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installedApp
+          if ($signature.Status -ne 'Valid') {
+            throw "Installed application signature is $($signature.Status): $($signature.StatusMessage)"
+          }
+          $uninstaller = Join-Path $installDirectory 'Uninstall AlbumDone.exe'
+          if (Test-Path $uninstaller) {
+            Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait
+          }
+
+      - name: Upload verified signed release
+        uses: actions/upload-artifact@v7
+        with:
+          name: albumdone-signed-windows-release
+          path: |
+            release-final/AlbumDone-*.exe
+            release-final/SHA256SUMS.txt
+          if-no-files-found: error

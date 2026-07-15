@@ -96,3 +96,10 @@ OpenAI official configuration defaults to Base URL `https://api.openai.com/v1`, 
 ## License
 
 AlbumDone is released under the [MIT License](LICENSE).
+
+## Code Signing
+
+The Windows code-signing process and its current approval status are documented
+in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md). Public SignPath signing is
+pending; unsigned releases must be labeled accordingly and include a SHA-256
+checksum.
