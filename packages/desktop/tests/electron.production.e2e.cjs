@@ -111,6 +111,7 @@ async function main() {
   const { gallery, duplicateTarget, expectedCount } = createGallery(runRoot);
   const mock = await createMockServer();
   let electronApp;
+  let page;
 
   try {
     const electronPath = require('electron');
@@ -129,7 +130,7 @@ async function main() {
       env,
       timeout: 30000,
     });
-    const page = await electronApp.firstWindow({ timeout: 30000 });
+    page = await electronApp.firstWindow({ timeout: 30000 });
     await page.waitForLoadState('domcontentloaded');
     await page.waitForFunction(() => Boolean(window.electronAPI));
 
@@ -252,6 +253,31 @@ async function main() {
       mockRequests: mock.requests.length,
       deletionVerified: true,
     })}\n`);
+  } catch (error) {
+    fs.mkdirSync(testResults, { recursive: true });
+    const bodyText = await page?.locator('body').innerText().catch(() => '');
+    const pageUrl = page?.url() ?? '';
+    const diagnostic = {
+      error: error instanceof Error ? error.stack ?? error.message : String(error),
+      pageUrl,
+      bodyText,
+    };
+    fs.writeFileSync(
+      path.join(testResults, 'electron-production-smoke-failure.json'),
+      `${JSON.stringify(diagnostic, null, 2)}\n`,
+    );
+    await page?.screenshot({
+      path: path.join(testResults, 'electron-production-smoke-failure.png'),
+      fullPage: false,
+    }).catch(() => undefined);
+    const logRoot = path.join(userData, 'logs');
+    if (fs.existsSync(logRoot)) {
+      fs.cpSync(logRoot, path.join(testResults, 'electron-production-smoke-logs'), {
+        recursive: true,
+      });
+    }
+    process.stderr.write(`${JSON.stringify(diagnostic)}\n`);
+    throw error;
   } finally {
     await electronApp?.close().catch(() => undefined);
     await mock.close().catch(() => undefined);
