@@ -46,7 +46,7 @@ const DEFAULT_OPENAI_BASE_URLS: Record<LLMProvider, string> = {
   moonshot: 'https://api.moonshot.cn/v1',
   zhipu: 'https://open.bigmodel.cn/api/paas/v4',
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  minimax: 'https://api.minimax.chat/v1',
+  minimax: 'https://api.minimaxi.com/v1',
   deepseek: 'https://api.deepseek.com/v1',
   custom: `http://localhost:${APP_PORTS.localOpenAICompatible}/v1`,
 };

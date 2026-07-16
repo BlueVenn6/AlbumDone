@@ -105,7 +105,7 @@ export const PROVIDER_MODELS: Record<
   },
   minimax: {
     name: 'MiniMax',
-    models: ['MiniMax-VL-01'],
+    models: ['MiniMax-M3'],
     supportsVision: true,
   },
   deepseek: {
@@ -119,6 +119,14 @@ export const PROVIDER_MODELS: Record<
     supportsVision: true,
   },
 };
+
+export function normalizeProviderModel(provider: LLMProvider, model: string): string {
+  const trimmedModel = model.trim();
+  if (provider === 'minimax' && trimmedModel === 'MiniMax-VL-01') {
+    return 'MiniMax-M3';
+  }
+  return trimmedModel;
+}
 
 const VISION_MODELS: Partial<Record<LLMProvider, readonly string[]>> = {
   openai: PROVIDER_MODELS.openai.models,
@@ -256,7 +264,13 @@ export function resolveProviderRoute(
     if (!provider) {
       continue;
     }
-    const config = providers[provider];
+    const storedConfig = providers[provider];
+    const config = storedConfig
+      ? {
+          ...storedConfig,
+          model: normalizeProviderModel(provider, storedConfig.model),
+        }
+      : undefined;
     if (!config || (!allowMissingApiKey && !hasConfiguredApiKey(config))) {
       continue;
     }
@@ -284,5 +298,5 @@ export function resolveProviderRoute(
 }
 
 export function formatProviderRouteLabel(route: Pick<ResolvedProviderRoute, 'provider' | 'config'>): string {
-  return `${PROVIDER_MODELS[route.provider].name} · ${route.config.model}`;
+  return `${PROVIDER_MODELS[route.provider].name} · ${normalizeProviderModel(route.provider, route.config.model)}`;
 }

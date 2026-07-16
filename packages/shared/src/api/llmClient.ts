@@ -17,7 +17,10 @@ import {
   normalizeProviderBaseUrl,
   type LLMErrorCategory,
 } from './llmEndpoint';
-import { getHttpUrlHostname } from '../utils/httpUrl';
+import {
+  getHttpUrlHostname,
+  parseHttpUrlOrThrow,
+} from '../utils/httpUrl';
 
 export type LLMRequestOptions = {
   temperature?: number;
@@ -32,17 +35,33 @@ function isLoopbackHostname(hostname: string): boolean {
   return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname.toLowerCase());
 }
 
-function assertSafeLLMEndpoint(url: string): void {
-  const parsedUrl = new URL(url);
-  if (!['https:', 'http:'].includes(parsedUrl.protocol)) {
-    throw new Error('Only HTTP(S) LLM endpoints are allowed.');
+function getQueryParameterNames(search: string): string[] {
+  if (!search.startsWith('?')) {
+    return [];
   }
-  for (const key of parsedUrl.searchParams.keys()) {
+
+  return search
+    .slice(1)
+    .split('&')
+    .map((entry) => entry.split('=', 1)[0] ?? '')
+    .filter(Boolean)
+    .map((name) => {
+      try {
+        return decodeURIComponent(name.replace(/\+/g, ' '));
+      } catch {
+        return name;
+      }
+    });
+}
+
+function assertSafeLLMEndpoint(url: string): void {
+  const parsedUrl = parseHttpUrlOrThrow(url);
+  for (const key of getQueryParameterNames(parsedUrl.search)) {
     if (SECRET_QUERY_PARAMS.has(key.toLowerCase())) {
       throw new Error('LLM endpoint URLs must not include API keys or tokens in query parameters.');
     }
   }
-  if (parsedUrl.protocol === 'http:' && !isLoopbackHostname(parsedUrl.hostname)) {
+  if (parsedUrl.origin.toLowerCase().startsWith('http://') && !isLoopbackHostname(parsedUrl.hostname)) {
     throw new Error('Plain HTTP LLM endpoints are limited to localhost.');
   }
 }
@@ -489,7 +508,7 @@ export class LLMClient {
       input: this.buildResponsesInput(compressedMessages),
       max_output_tokens: options.maxTokens ?? 2048,
     };
-    if (typeof options.temperature === 'number') {
+    if (typeof options.temperature === 'number' && !/^gpt-5(?:\.|-|$)/i.test(this.config.model)) {
       body.temperature = options.temperature;
     }
 
@@ -801,7 +820,10 @@ export class LLMClient {
   async testConnection(): Promise<TestConnectionResult> {
     const isKimiK2 =
       this.config.provider === 'moonshot' && this.config.model?.startsWith('kimi-k2');
-    const maxTokens = isKimiK2 ? 2048 : 32;
+    const isMiniMaxM3 =
+      this.config.provider === 'minimax' && this.config.model === 'MiniMax-M3';
+    const maxTokens = isKimiK2 ? 2048 : isMiniMaxM3 ? 512 : 32;
+    const timeoutMs = isMiniMaxM3 ? 60000 : 20000;
     const shouldTestVision = this.supportsVision();
 
     try {
@@ -810,11 +832,11 @@ export class LLMClient {
           'This is an application-generated connection test image. Reply with just "ok".',
           CONNECTION_TEST_IMAGE_BASE64,
           'image/jpeg',
-          { maxTokens, temperature: 0, timeoutMs: 20000 },
+          { maxTokens, temperature: 0, timeoutMs },
         )
         : await this.chat(
           [{ role: 'user', content: 'Reply with just "ok".' }],
-          { maxTokens, temperature: 0, timeoutMs: 20000 },
+          { maxTokens, temperature: 0, timeoutMs },
         );
 
       if (response.content) {

@@ -167,6 +167,7 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     assert.strictEqual(connectionImage[0], 0xff);
     assert.strictEqual(connectionImage[1], 0xd8);
     assert.strictEqual(openAIConnectionBody.input[0].content[1].type, 'input_text');
+    assert.strictEqual(openAIConnectionBody.temperature, undefined);
 
     const openAICompatibleDirect = [
       {
@@ -189,9 +190,9 @@ function assertOpenAIResponsesImageRequest(call, expected) {
       },
       {
         provider: 'minimax',
-        model: 'MiniMax-VL-01',
-        baseUrl: 'https://api.minimax.chat/v1',
-        expectedUrl: 'https://api.minimax.chat/v1/chat/completions',
+        model: 'MiniMax-M3',
+        baseUrl: 'https://api.minimaxi.com/v1',
+        expectedUrl: 'https://api.minimaxi.com/v1/chat/completions',
       },
     ];
 
@@ -228,6 +229,9 @@ function assertOpenAIResponsesImageRequest(call, expected) {
       const connectionDataUrl = connectionBody.messages[0].content[0].image_url.url;
       assert.match(connectionDataUrl, /^data:image\/jpeg;base64,/);
       assert(Buffer.from(connectionDataUrl.split(',')[1], 'base64').length > 2000);
+      if (config.provider === 'minimax') {
+        assert.strictEqual(connectionBody.max_tokens, 512);
+      }
     }
 
     calls.length = 0;

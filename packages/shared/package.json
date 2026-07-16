@@ -9,7 +9,7 @@
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
-    "test": "npm run build && node tests/albumSnapshot.test.cjs && node tests/taskCheckpoint.test.cjs && node tests/meaningfulMoments.test.cjs && node tests/photoUriAndSafety.test.cjs && node tests/importThumbnailSmoke.test.cjs && node tests/llmEndpoint.test.cjs && node tests/llmClientVision.test.cjs && node tests/monthlyReview.test.cjs && node tests/yearReviewLayout.test.cjs && node tests/providerRoute.test.cjs && node tests/screenshotInstruction.test.cjs && node tests/screenshotDetector.test.cjs && node tests/i18n.test.cjs && node tests/deduplication.test.cjs && node tests/dedupeGolden.test.cjs && node tests/dedupeAsync.test.cjs"
+    "test": "npm run build && node tests/albumSnapshot.test.cjs && node tests/taskCheckpoint.test.cjs && node tests/meaningfulMoments.test.cjs && node tests/photoUriAndSafety.test.cjs && node tests/importThumbnailSmoke.test.cjs && node tests/llmEndpoint.test.cjs && node tests/llmClientVision.test.cjs && node tests/monthlyReview.test.cjs && node tests/yearReviewLayout.test.cjs && node tests/providerRoute.test.cjs && node tests/settingsMigration.test.cjs && node tests/screenshotInstruction.test.cjs && node tests/screenshotDetector.test.cjs && node tests/i18n.test.cjs && node tests/deduplication.test.cjs && node tests/dedupeGolden.test.cjs && node tests/dedupeAsync.test.cjs"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.82",

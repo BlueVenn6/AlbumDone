@@ -18,6 +18,7 @@ export type {
 
 export {
   PROVIDER_MODELS,
+  normalizeProviderModel,
   providerHasVisionModels,
   modelSupportsVision,
   proxyModelSupportsVision,

@@ -13,14 +13,14 @@ import type {
   OcrLanguage,
   CustomInstruction,
 } from '../types';
-import { DEFAULT_SETTINGS, configSupportsVision } from '../types';
+import { DEFAULT_SETTINGS, configSupportsVision, normalizeProviderModel } from '../types';
 
 function createRuntimeProviderConfig(config: ProviderConfig): ProviderConfig {
   const trimmedApiKey = config.apiKey?.trim();
 
   return {
     provider: config.provider,
-    model: config.model,
+    model: normalizeProviderModel(config.provider, config.model),
     ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {}),
     ...(config.baseUrl?.trim() ? { baseUrl: config.baseUrl.trim() } : {}),
     hasApiKey: Boolean(trimmedApiKey || config.hasApiKey),
@@ -38,7 +38,7 @@ function sanitizeProviderConfigForPersistence(
 ): ProviderConfig {
   return {
     provider,
-    model: config.model,
+    model: normalizeProviderModel(provider, config.model),
     hasApiKey: Boolean(config.apiKey?.trim() || config.hasApiKey),
     mode: config.mode ?? 'direct',
     ...(config.baseUrl?.trim() ? { baseUrl: config.baseUrl.trim() } : {}),
@@ -47,6 +47,22 @@ function sanitizeProviderConfigForPersistence(
       provider,
       mode: config.mode ?? 'direct',
     }),
+  };
+}
+
+function migratePersistedSettings(persistedState: unknown): Partial<Settings> {
+  const state = (persistedState ?? {}) as Partial<Settings>;
+  const providers: Partial<Record<LLMProvider, ProviderConfig>> = {};
+
+  for (const [key, rawConfig] of Object.entries(state.providers ?? {})) {
+    const provider = key as LLMProvider;
+    if (!rawConfig) continue;
+    providers[provider] = sanitizeProviderConfigForPersistence(provider, rawConfig);
+  }
+
+  return {
+    ...state,
+    providers,
   };
 }
 
@@ -189,12 +205,13 @@ export const useSettingsStore = create<SettingsState>()(
     })),
     {
       name: 'photo-manager-settings',
-      onRehydrateStorage: () => (_state, error) => {
-        if (error) return;
-        const currentState = useSettingsStore.getState();
+      version: 1,
+      migrate: (persistedState) => migratePersistedSettings(persistedState),
+      onRehydrateStorage: () => (rehydratedState, error) => {
+        if (error || !rehydratedState) return;
         const nextProviders: Partial<Record<LLMProvider, ProviderConfig>> = {};
 
-        for (const [key, rawConfig] of Object.entries(currentState.providers)) {
+        for (const [key, rawConfig] of Object.entries(rehydratedState.providers)) {
           const provider = key as LLMProvider;
           const config = rawConfig;
           if (!config) continue;

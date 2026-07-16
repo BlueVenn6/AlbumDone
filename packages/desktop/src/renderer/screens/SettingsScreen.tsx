@@ -55,7 +55,7 @@ function getEndpointRiskKey(baseUrl: string): { level: 'low' | 'medium' | 'local
       'api.moonshot.ai',
       'open.bigmodel.cn',
       'dashscope.aliyuncs.com',
-      'api.minimax.chat',
+      'api.minimaxi.com',
       'api.deepseek.com',
     ];
     return officialHosts.includes(parsed.hostname)

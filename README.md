@@ -6,6 +6,26 @@ Built as a privacy-conscious windows-utility, it keeps core processing on the us
 
 This repository is the verified Windows desktop source release. Android and iOS are not included because they have not completed independent device acceptance testing.
 
+## Desktop Beta Status
+
+The current source release is **v0.1.2-beta.2** for Windows x64. It is a public Beta rather than a final stable release.
+
+The Windows installer is currently **unsigned**. Windows SmartScreen may display an "Unknown publisher" warning; verify the SHA-256 published with the release before running it.
+
+This Beta includes the following fixes and improvements over the earlier public build:
+
+- Replaced the retired MiniMax endpoint and `MiniMax-VL-01` preset with `https://api.minimaxi.com/v1` and `MiniMax-M3`.
+- Migrates previously saved MiniMax routes so Settings and screenshot tasks use the same current model.
+- Uses provider-appropriate MiniMax connection-test limits and preserves clear provider error reporting.
+- Retains the verified near-duplicate detection behavior, release source fingerprinting, Electron smoke test, and reproducible performance checks.
+
+Known limitations:
+
+- This is Beta software. Back up important photos before batch deletion and review every deletion candidate.
+- Large-library performance depends on image format, storage speed, and available memory.
+- Cloud AI features require a user-supplied API key and send the selected screenshot to the provider configured by the user.
+- Mobile platforms are not included in this desktop release and have not completed independent release acceptance.
+
 ## System Requirements
 
 - Windows 10 or Windows 11 on an Intel or AMD x64 computer: natively supported.

@@ -5,8 +5,14 @@ const {
   buildOpenAIChatCompletionsUrl,
   buildOpenAIResponsesUrl,
   classifyLLMError,
+  getDefaultProviderBaseUrl,
   normalizeProviderBaseUrl,
 } = require('../dist/api/llmEndpoint');
+
+assert.strictEqual(
+  getDefaultProviderBaseUrl('minimax'),
+  'https://api.minimaxi.com/v1',
+);
 
 assert.strictEqual(
   buildOpenAIChatCompletionsUrl('https://api.example.com'),

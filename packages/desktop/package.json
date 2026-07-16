@@ -1,6 +1,6 @@
 {
   "name": "@photo-manager/desktop",
-  "version": "0.1.0",
+  "version": "0.1.2-beta.2",
   "description": "AlbumDone - local-first photo manager",
   "author": "AlbumDone",
   "private": true,
@@ -69,7 +69,7 @@
     "build:main": "tsc --project tsconfig.json --outDir dist",
     "build:renderer": "vite build --config vite.config.ts",
     "electron": "cross-env NODE_ENV=development node scripts/start-electron.cjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run build:shared && tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "npm run build:main && node tests/asyncTimeout.test.cjs && node tests/yearInReviewMonthPlan.test.cjs && node tests/yearInReviewExport.test.cjs && node tests/yearInReviewIpcContract.test.cjs",
     "pretest:e2e": "electron-builder install-app-deps",

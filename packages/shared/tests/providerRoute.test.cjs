@@ -2,6 +2,7 @@ const assert = require('assert');
 const {
   formatProviderRouteLabel,
   modelSupportsVision,
+  normalizeProviderModel,
   getConfiguredProviders,
   resolveProviderRoute,
 } = require('../dist/types/llm');
@@ -38,6 +39,26 @@ const {
   assert.strictEqual(route.config.model, 'kimi-k2.5');
   assert.strictEqual(formatProviderRouteLabel(route), 'Moonshot (Kimi) · kimi-k2.5');
   assert.strictEqual(modelSupportsVision('openai', 'gpt-4.1'), true);
+  assert.strictEqual(
+    normalizeProviderModel('minimax', 'MiniMax-VL-01'),
+    'MiniMax-M3',
+  );
+  const migratedMiniMaxRoute = resolveProviderRoute(
+    {
+      minimax: {
+        provider: 'minimax',
+        model: 'MiniMax-VL-01',
+        hasApiKey: true,
+        supportsVision: true,
+        mode: 'direct',
+      },
+    },
+    { defaultVisionProvider: 'minimax' },
+    { requiresVision: true },
+  );
+  assert(migratedMiniMaxRoute);
+  assert.strictEqual(migratedMiniMaxRoute.config.model, 'MiniMax-M3');
+  assert.strictEqual(formatProviderRouteLabel(migratedMiniMaxRoute), 'MiniMax · MiniMax-M3');
   assert.strictEqual(modelSupportsVision('google', 'gemini-2.5-flash'), true);
 
   const deepseekOnly = resolveProviderRoute(
