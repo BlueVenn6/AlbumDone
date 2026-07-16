@@ -22,7 +22,7 @@
     "@typescript-eslint/parser": "^8.64.0",
     "eslint": "^8.57.1",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "turbo": "^2.0.0",
+    "turbo": "^2.10.5",
     "typescript": "^5.4.0"
   },
   "packageManager": "npm@10.9.2"
