@@ -63,6 +63,17 @@ assert.strictEqual(
   'https://api.example.com/v1',
 );
 assert.strictEqual(
+  normalizeProviderBaseUrl(
+    `https://api.example.com/v1${'/'.repeat(50_000)}`,
+    'https://fallback.example.com/v1',
+  ),
+  'https://api.example.com/v1',
+);
+assert.throws(
+  () => buildOpenAIChatCompletionsUrl(`https://${'"'.repeat(50_000)}`),
+  /Base URL is invalid/,
+);
+assert.strictEqual(
   buildAnthropicMessagesUrl('https://api.anthropic.com'),
   'https://api.anthropic.com/v1/messages',
 );

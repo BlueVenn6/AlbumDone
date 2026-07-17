@@ -577,4 +577,16 @@ assert.strictEqual(hammingDistance(0n, (1n << 96n) - 1n), 96);
   assert.strictEqual(groups.length, 0, 'matching dHash values cannot bypass the structure verifier');
 }
 
+{
+  const repeatedDigits = '9'.repeat(50_000);
+  const startedAt = performance.now();
+  const groups = groupSimilarPhotos([
+    photo('long-sequence-a', { filename: `IMG_${repeatedDigits} trailing.JPG` }),
+    photo('long-sequence-b', { filename: `IMG_${repeatedDigits} other.JPG` }),
+  ]);
+
+  assert.deepStrictEqual(groups, []);
+  assert.ok(performance.now() - startedAt < 1_000, 'long filename parsing must remain linear');
+}
+
 console.log('deduplication tests passed');
