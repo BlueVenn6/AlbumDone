@@ -6,11 +6,24 @@ const { spawnSync } = require('node:child_process');
 const repoRoot = path.resolve(__dirname, '../../..');
 const desktopRoot = path.join(repoRoot, 'packages/desktop');
 const desktopPackage = require(path.join(desktopRoot, 'package.json'));
+const electronPackagePath = require.resolve('electron/package.json');
+const electronPackage = require(electronPackagePath);
+const electronDist = path.join(path.dirname(electronPackagePath), 'dist');
 const npmCli = process.env.npm_execpath;
 const builderCli = require.resolve('electron-builder/out/cli/cli.js');
 
 if (!npmCli) {
   throw new Error('npm_execpath is unavailable; run this script through npm.');
+}
+
+if (electronPackage.version !== desktopPackage.build.electronVersion) {
+  throw new Error(
+    `Installed Electron ${electronPackage.version} does not match build.electronVersion ${desktopPackage.build.electronVersion}`,
+  );
+}
+
+if (!fs.existsSync(path.join(electronDist, 'electron.exe'))) {
+  throw new Error(`Installed Electron distribution is incomplete: ${electronDist}`);
 }
 
 function run(command, args, options = {}) {
@@ -86,7 +99,7 @@ run(process.execPath, [npmCli, 'run', 'build'], { cwd: desktopRoot });
 const distManifestPath = path.join(desktopRoot, 'dist/build-source.json');
 fs.writeFileSync(distManifestPath, `${JSON.stringify(sourceSnapshot, null, 2)}\n`, 'utf8');
 
-run(process.execPath, [builderCli, '--win', 'nsis'], {
+run(process.execPath, [builderCli, '--win', 'nsis', `--config.electronDist=${electronDist}`], {
   cwd: desktopRoot,
   env: { ...process.env, ALBUMDONE_BUILD_ID: buildId },
 });
