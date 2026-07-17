@@ -1,98 +1,108 @@
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 # AlbumDone
 
-AlbumDone is an open-source, local-first Windows utility for cleaning and organizing local photo libraries.
-It combines photo-cleaner, duplicate-photo-finder, and image-culling workflows with screenshot organization and optional AI-assisted understanding.
-Built as a privacy-conscious windows-utility, it keeps core processing on the user's computer and leaves deletion decisions under user review.
+[![CI](https://github.com/BlueVenn6/AlbumDone/actions/workflows/ci.yml/badge.svg)](https://github.com/BlueVenn6/AlbumDone/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/BlueVenn6/AlbumDone/actions/workflows/codeql.yml/badge.svg)](https://github.com/BlueVenn6/AlbumDone/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-This repository is the verified Windows desktop source release. Android and iOS are not included because they have not completed independent device acceptance testing.
+AlbumDone is an open-source, local-first Windows photo organizer for duplicate review, manual culling, screenshot workflows, and year-in-review collages, with optional bring-your-own-key AI assistance.
 
-## Desktop Beta Status
+The public release is a Windows desktop Beta. Android and iOS builds are being tested separately and are not publicly available from this repository.
 
-The current source release is **v0.1.2-beta.2** for Windows x64. It is a public Beta rather than a final stable release.
+## Product Preview
 
-The Windows installer is currently **unsigned**. Windows SmartScreen may display an "Unknown publisher" warning; verify the SHA-256 published with the release before running it.
+![AlbumDone Library showing the four desktop workflows](docs/assets/albumdone-library.png)
 
-This Beta includes the following fixes and improvements over the earlier public build:
+The screenshot above is produced by the Electron production test with a synthetic photo library. It contains no user photos or private paths.
 
-- Replaced the retired MiniMax endpoint and `MiniMax-VL-01` preset with `https://api.minimaxi.com/v1` and `MiniMax-M3`.
-- Migrates previously saved MiniMax routes so Settings and screenshot tasks use the same current model.
-- Uses provider-appropriate MiniMax connection-test limits and preserves clear provider error reporting.
-- Retains the verified near-duplicate detection behavior, release source fingerprinting, Electron smoke test, and reproducible performance checks.
+## What AlbumDone Solves
 
-Known limitations:
+Large local photo folders are difficult to review consistently. AlbumDone brings common cleanup tasks into one desktop application while keeping file selection and deletion decisions visible to the user.
 
-- This is Beta software. Back up important photos before batch deletion and review every deletion candidate.
-- Large-library performance depends on image format, storage speed, and available memory.
-- Cloud AI features require a user-supplied API key and send the selected screenshot to the provider configured by the user.
-- Mobile platforms are not included in this desktop release and have not completed independent release acceptance.
+## Core Features
 
-## System Requirements
+- **Duplicate review:** scan exact and visually similar candidates, then review each group before selecting files for deletion.
+- **Manual culling:** review photos individually or in a grid, mark keep/delete decisions, and undo changes before confirmation.
+- **Screenshot workflow:** identify screenshot candidates, browse them, and optionally run text extraction, translation, summarization, rewriting, or custom instructions.
+- **Year in Review:** create a collage for the current year or the past 12 months, with explicit localized cards for months without usable photos.
+- **Optional BYO-key AI:** configure supported providers or a trusted Custom Endpoint with your own API key. AI is not required for local folder organization.
 
-- Windows 10 or Windows 11 on an Intel or AMD x64 computer: natively supported.
-- Windows 11 on an ARM64 computer: supported through Windows x64 emulation. The current x64 release has been tested on a Microsoft SQ2 device, but it is not an ARM64-native build.
-- Windows 10 on ARM64 and 32-bit Windows: not supported by the current x64 release.
+Similarity is a review aid, not proof that two files are interchangeable. AlbumDone does not make an automatic deletion decision on the user's behalf.
 
-The installer filename includes `x64`. A separate ARM64-native installer is not currently published.
+## Local-First and Privacy
 
-## Local-First Behavior
+Folder scanning, thumbnailing, duplicate analysis, culling, and collage generation run on the user's device. AlbumDone does not provide a shared photo-storage backend, and the project maintainer does not receive local photos or API keys through these workflows.
 
-Core organization, duplicate detection, culling, and local archiving workflows are designed to run on the user's device.
+AI features are optional and are not fully offline. When the user explicitly runs an AI action, the selected screenshot, the instruction, and required request content are sent directly to the model provider or Custom Endpoint chosen by the user. The provider's privacy terms, availability, and usage charges apply.
 
-This project does not provide a shared cloud backend for user photos. The developer does not receive or store user photos, API keys, or local files through the app's core local workflows.
+Desktop API keys are stored with system-backed secure storage such as keytar or Electron `safeStorage`. Never include a key in an issue, screenshot, Base URL query parameter, log, or pull request.
 
-## AI and Cloud Models
+## Download
 
-AI features are optional. When AI screenshot understanding, vision models, or cloud model features are enabled, the current screenshot, user instructions, and required content are sent to the model provider or Custom Endpoint selected by the user.
+Beta builds are available from [GitHub Releases](https://github.com/BlueVenn6/AlbumDone/releases). Download the Windows `.exe` asset, not GitHub's automatically generated source archives.
 
-The request destination depends on the configured provider, Base URL, or Custom Endpoint. If you configure a third-party proxy or custom Base URL, make sure you trust that service before sending screenshots or instructions through it.
+Current public target:
 
-The developer does not receive or store these model requests or their contents.
+- Windows 10 or Windows 11 on Intel/AMD x64: native support.
+- Windows 11 ARM64: runs through Windows x64 emulation; the release is not ARM64-native.
+- Windows 10 ARM64, 32-bit Windows, Android, and iOS: no public build is currently provided.
 
-## API Keys
+The current Windows installer is not code-signed yet. Windows SmartScreen may display a warning.
 
-Users provide their own API keys for model providers.
+## Installation
 
-On desktop, API keys are stored with system-backed secure storage such as keytar or Electron safeStorage. Desktop LLM and Vision requests are sent by the Electron main process, and the renderer does not read saved plaintext API keys.
+1. Open the [Releases page](https://github.com/BlueVenn6/AlbumDone/releases) and select the latest Beta.
+2. Download the asset whose filename ends in `-x64.exe`.
+3. If `SHA256SUMS.txt` is attached, verify the installer in PowerShell:
 
-Do not paste API keys into issues, screenshots, logs, public discussions, or pull requests.
+   ```powershell
+   Get-FileHash -Algorithm SHA256 .\AlbumDone-*.exe
+   ```
 
-## Custom Endpoint Risk
+4. Compare the result with the checksum attached to the same Release.
+5. Run the installer and follow the prompts. For an unsigned build, only continue after confirming the file came from this repository and its checksum matches.
 
-Custom Endpoints are chosen and trusted by the user. Request content may be sent to the configured endpoint.
+See the [bilingual user guide](docs/USER_GUIDE.md) for workflow instructions.
 
-Do not use unknown or untrusted endpoint addresses. Remote HTTP endpoints, unsafe protocols, and URLs containing token or key query parameters are restricted or rejected by the app.
+## Current Beta Status
 
-## File Safety
+The source version is **v0.1.2-beta.3**. This Beta includes the current desktop provider compatibility fixes, dependency security updates, release source fingerprinting, production Electron workflow tests, and reproducible performance checks.
 
-Back up important photos before using batch delete, culling, or large organization workflows.
+Beta means the application is still being tested across more libraries and Windows environments. A successful automated test does not remove the need to review file operations in your own environment.
 
-Delete operations prefer the system trash when available, with an app-managed fallback trash directory when needed. Recovery is not guaranteed in every environment.
+## Safety Notice
 
-AI results are assistance only and may be inaccurate. Review suggestions before deleting or changing files.
+- Start with a copied test folder or a fully backed-up photo library.
+- Review every duplicate or similar-photo group before confirming deletion.
+- Do not treat visual similarity as a safe-delete decision.
+- Confirm the selected folder, photo count, and deletion candidates before a batch operation.
+- Deletion prefers the Windows Recycle Bin and may use an app-managed fallback trash directory when necessary, but recovery is not guaranteed in every environment.
+- AI output may be incomplete or incorrect. Review it before using or sharing it.
+
+See [DISCLAIMER.md](DISCLAIMER.md) for the complete safety and third-party service notice.
+
+## Known Limitations
+
+- The Windows installer is currently unsigned and may trigger SmartScreen.
+- Large-library performance depends on image format, disk speed, decoder support, and available memory.
+- Damaged, offline, locked, or unsupported images may be skipped and reported.
+- Cloud model access depends on the selected provider, account permissions, model availability, quota, and network access.
+- The current x64 build is not an ARM64-native application.
+- Mobile editions have not completed separate public release acceptance and are not available here.
+
+## Feedback and Bug Reports
+
+Use [GitHub Issues](https://github.com/BlueVenn6/AlbumDone/issues) for reproducible bugs and feature requests. Include the AlbumDone version, Windows version, workflow, displayed counts, and steps to reproduce. Do not attach private photos, API keys, credentials, or sensitive local paths.
+
+Security reports should follow [SECURITY.md](SECURITY.md).
 
 ## Development
 
-Install dependencies:
+Prerequisites: Node.js 22 and npm 10.
 
 ```bash
 npm install
-```
-
-Run shared tests:
-
-```bash
-npm --workspace @photo-manager/shared test
-```
-
-Run desktop typecheck:
-
-```bash
-npm --workspace @photo-manager/desktop run typecheck
-```
-
-Run all workspace checks:
-
-```bash
 npm run lint
 npm run typecheck
 npm run test
@@ -111,30 +121,18 @@ Create a clean, traceable Windows installer:
 npm --workspace @photo-manager/desktop run package
 ```
 
-The packaging command removes generated Desktop/Shared outputs, rebuilds Shared before Desktop, embeds a source fingerprint, and creates one uniquely named NSIS installer.
+The packaging command cleans generated Shared/Desktop outputs, rebuilds Shared before Desktop, embeds a source fingerprint, and creates one uniquely named NSIS installer. Default development ports and optional local services are documented in [.env.example](.env.example).
 
-### Ports And Local Services
+Additional documentation:
 
-The default ports are defined in `packages/shared/src/config/ports.ts` and mirrored in `.env.example`. Electron main process code mirrors the same env names in `packages/desktop/src/main/ports.ts` because its TypeScript build is scoped to the desktop package.
+- [User guide](docs/USER_GUIDE.md)
+- [Reproducible performance benchmarks](docs/PERFORMANCE.md)
+- [Code-signing policy](CODE_SIGNING_POLICY.md)
 
-- Desktop renderer dev server: `5173`
-- Desktop LAN sharing server: `7842`, with `7843` fallback if occupied
-- Desktop local OpenAI-compatible endpoint default: `http://localhost:11434/v1`
+## Contributing
 
-OpenAI official configuration defaults to Base URL `https://api.openai.com/v1`, endpoint `/responses`, and model `gpt-5.5`. Users must provide their own API key in Settings.
+Before opening a pull request, run the checks above and describe how the change was tested. Keep changes focused, add regression coverage for bug fixes, and never commit user data, API keys, generated installers, or local configuration.
 
 ## License
 
 AlbumDone is released under the [MIT License](LICENSE).
-
-## Code Signing
-
-The Windows code-signing process and its current approval status are documented
-in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md). Public SignPath signing is
-pending; unsigned releases must be labeled accordingly and include a SHA-256
-checksum.
-
-## User Documentation
-
-- [Bilingual user guide / 中英文使用指南](docs/USER_GUIDE.md)
-- [Reproducible performance benchmarks](docs/PERFORMANCE.md)

@@ -164,6 +164,13 @@ async function main() {
       (count) => document.body.innerText.includes(String(count)),
       scan.count,
     );
+    if (process.env.ALBUMDONE_DOC_SCREENSHOT) {
+      fs.mkdirSync(path.dirname(process.env.ALBUMDONE_DOC_SCREENSHOT), { recursive: true });
+      await page.screenshot({
+        path: process.env.ALBUMDONE_DOC_SCREENSHOT,
+        fullPage: false,
+      });
+    }
 
     await navigateToFeature(page, '#/deduplication', gallery);
     await clickButton(page, ['All', '全部']);
