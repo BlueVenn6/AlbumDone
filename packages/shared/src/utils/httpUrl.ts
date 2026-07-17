@@ -5,10 +5,13 @@ export type ParsedHttpUrl = {
   hostname: string;
 };
 
-const HTTP_URL_PATTERN = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]+)([^?#]*)?(\?[^#]*)?(?:#.*)?$/i;
-
 export function trimTrailingSlashes(value: string): string {
-  return value.trim().replace(/\/+$/, '');
+  const trimmed = value.trim();
+  let endIndex = trimmed.length;
+  while (endIndex > 0 && trimmed.charCodeAt(endIndex - 1) === 47) {
+    endIndex -= 1;
+  }
+  return trimmed.slice(0, endIndex);
 }
 
 function getHostnameFromAuthority(authority: string): string {
@@ -28,14 +31,31 @@ export function parseHttpUrl(rawUrl: string): ParsedHttpUrl | null {
     return null;
   }
 
-  const match = trimmed.match(HTTP_URL_PATTERN);
-  if (!match) {
+  const schemeEndIndex = trimmed.indexOf('://');
+  if (schemeEndIndex <= 0) {
     return null;
   }
 
-  const protocol = match[1]?.toLowerCase();
-  const authority = match[2];
-  if (!protocol || !authority || !['http', 'https'].includes(protocol)) {
+  const protocol = trimmed.slice(0, schemeEndIndex).toLowerCase();
+  if (!['http', 'https'].includes(protocol)) {
+    return null;
+  }
+
+  const authorityStartIndex = schemeEndIndex + 3;
+  let authorityEndIndex = trimmed.length;
+  for (let index = authorityStartIndex; index < trimmed.length; index += 1) {
+    const character = trimmed[index];
+    if (character === '/' || character === '?' || character === '#') {
+      authorityEndIndex = index;
+      break;
+    }
+    if (!character || character <= ' ' || '"<>\\^`{|}'.includes(character)) {
+      return null;
+    }
+  }
+
+  const authority = trimmed.slice(authorityStartIndex, authorityEndIndex);
+  if (!authority) {
     return null;
   }
 
@@ -44,10 +64,19 @@ export function parseHttpUrl(rawUrl: string): ParsedHttpUrl | null {
     return null;
   }
 
+  const fragmentIndex = trimmed.indexOf('#', authorityEndIndex);
+  const contentEndIndex = fragmentIndex >= 0 ? fragmentIndex : trimmed.length;
+  const queryIndex = trimmed.indexOf('?', authorityEndIndex);
+  const hasQuery = queryIndex >= 0 && queryIndex < contentEndIndex;
+  const pathEndIndex = hasQuery ? queryIndex : contentEndIndex;
+  const rawPathname = authorityEndIndex < pathEndIndex
+    ? trimmed.slice(authorityEndIndex, pathEndIndex)
+    : '';
+
   return {
     origin: `${protocol}://${authority}`,
-    pathname: match[3] || '/',
-    search: match[4] || '',
+    pathname: rawPathname || '/',
+    search: hasQuery ? trimmed.slice(queryIndex, contentEndIndex) : '',
     hostname,
   };
 }
