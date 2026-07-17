@@ -56,7 +56,7 @@ jobs:
             "test-results/performance-$env:BENCHMARK_SIZE.json"
 
       - name: Upload benchmark report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: performance-${{ env.BENCHMARK_SIZE }}-${{ github.run_id }}
           path: test-results/performance-${{ env.BENCHMARK_SIZE }}.json
