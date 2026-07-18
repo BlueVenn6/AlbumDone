@@ -85,6 +85,7 @@ async function main() {
     return (await window.electronAPI.getPhotos(${albumLiteral}, { mode: 'fast' })).length;
   })()`);
   assert(photoCount > 1000);
+  const largeLibraryTimeoutMs = photoCount > 5000 ? 30 * 60 * 1000 : 6 * 60 * 1000;
   const checkpointKey = `photo-task:v1:deduplication:${encodeURIComponent(albumPath)}`;
   await evaluate(`window.electronAPI.tasks.deleteCheckpoint(${JSON.stringify(checkpointKey)})`);
   await evaluate(`history.replaceState({
@@ -104,11 +105,17 @@ async function main() {
   await waitFor(
     `(
       document.body.textContent.includes('Candidate hashing:')
-      && document.body.textContent.includes('(from ${photoCount} input photos)')
-    ) || document.body.textContent.includes('Comparing candidate pairs:')
+      || document.body.textContent.includes('Generating missing visual signatures:')
+      || document.body.textContent.includes('生成缺失的视觉签名')
+    )
+      && (
+        document.body.textContent.includes('(from ${photoCount} input photos)')
+        || document.body.textContent.includes('/ ${photoCount}')
+      )
+      || document.body.textContent.includes('Comparing candidate pairs:')
       || document.body.textContent.includes('Found ')
       || document.body.textContent.includes('No duplicate groups found')`,
-    120000,
+    largeLibraryTimeoutMs,
   );
   const progressText = await evaluate(`document.body.innerText`);
   const candidateLine = progressText.split(/\r?\n/).find((line) => line.includes('Candidate hashing:')) || '';
@@ -118,7 +125,7 @@ async function main() {
 
   const completionStartedAt = Date.now();
   let maximumCandidatePairs = 0;
-  while (Date.now() - completionStartedAt < 360000) {
+  while (Date.now() - completionStartedAt < largeLibraryTimeoutMs) {
     const state = await evaluate(String.raw`(() => {
       const text = document.body.innerText;
       const match = text.match(/Comparing candidate pairs:\s*[\d,]+\s*\/\s*([\d,]+)/i);
@@ -134,7 +141,7 @@ async function main() {
   const completionMs = Date.now() - completionStartedAt;
   assert(
     await evaluate(`document.body.textContent.includes('Found ') || document.body.textContent.includes('No duplicate groups found')`),
-    'Deduplication did not finish within six minutes.',
+    `Deduplication did not finish within ${Math.round(largeLibraryTimeoutMs / 60000)} minutes.`,
   );
   const completionText = await evaluate(`document.body.innerText`);
   const resultUi = await evaluate(`({

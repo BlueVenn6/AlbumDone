@@ -17,6 +17,7 @@ import {
 import { getLocalIp, startLanServer, stopLanServer, getLanServerUrl } from './lanServer';
 import { normalizeDesktopLocale, readSystemDisplayLocale } from './locale';
 import { logger, serializeError } from './logger';
+import { RecoverableBatchError, runCrashIsolatedBatches } from './resilientBatch';
 import { DESKTOP_PORTS } from './ports';
 import { raceWithTimeout } from './asyncTimeout';
 import { registerYearInReviewIpc } from './yearInReviewIpc';
@@ -2158,28 +2159,31 @@ async function computeVisualHashForFile(filePath: string, signal?: AbortSignal):
   }
 }
 
-function computeVisualHashesInWorker(
+const VISUAL_HASH_WORKER_BATCH_SIZE = 32;
+
+type VisualHashWorkerMessage =
+  | { type: 'result'; filePath: string; hash: string }
+  | { type: 'result'; filePath: string; error: string }
+  | { type: 'done' };
+
+function runVisualHashWorkerBatch(
   filePaths: string[],
   signal: AbortSignal,
-): Promise<{ hashes: Record<string, string>; errors: Record<string, string> }> {
-  if (filePaths.length === 0) {
-    return Promise.resolve({ hashes: {}, errors: {} });
-  }
+  onResult: (message: Exclude<VisualHashWorkerMessage, { type: 'done' }>) => void,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const worker = fork(path.join(__dirname, 'visualHashWorker.js'), [], {
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     });
     let settled = false;
-    const finish = (
-      error: Error | null,
-      response?: { hashes: Record<string, string>; errors: Record<string, string> },
-    ) => {
+    const completedPaths = new Set<string>();
+    const finish = (error: Error | null) => {
       if (settled) return;
       settled = true;
       signal.removeEventListener('abort', abort);
       if (error) reject(error);
-      else resolve(response ?? { hashes: {}, errors: {} });
+      else resolve();
     };
     const abort = () => {
       worker.kill();
@@ -2189,14 +2193,58 @@ function computeVisualHashesInWorker(
     worker.once('error', (error) => finish(error));
     worker.once('exit', (code) => {
       if (!settled) {
-        finish(new Error(`Visual hash worker exited before returning results (code ${code ?? 'unknown'}).`));
+        const remainingPaths = filePaths.filter((filePath) => !completedPaths.has(filePath));
+        finish(new RecoverableBatchError(
+          `Visual hash worker exited before returning results (code ${code ?? 'unknown'}).`,
+          remainingPaths,
+        ));
       }
     });
-    worker.once('message', (response: { hashes: Record<string, string>; errors: Record<string, string> }) => {
-      finish(null, response);
+    worker.on('message', (message: VisualHashWorkerMessage) => {
+      if (message.type === 'done') {
+        finish(null);
+        return;
+      }
+      if (message.filePath !== '__worker') {
+        completedPaths.add(message.filePath);
+      }
+      onResult(message);
     });
     worker.send({ filePaths });
   });
+}
+
+async function computeVisualHashesInWorker(
+  filePaths: string[],
+  signal: AbortSignal,
+): Promise<{ hashes: Record<string, string>; errors: Record<string, string> }> {
+  const hashes: Record<string, string> = {};
+  const errors: Record<string, string> = {};
+
+  await runCrashIsolatedBatches(
+    filePaths,
+    VISUAL_HASH_WORKER_BATCH_SIZE,
+    async (batch) => {
+      throwIfAborted(signal);
+      await runVisualHashWorkerBatch(batch, signal, (message) => {
+        if ('hash' in message) {
+          hashes[message.filePath] = message.hash;
+          updatePhotoIndexVisualHash(message.filePath, message.hash);
+        } else if (message.filePath !== '__worker') {
+          errors[message.filePath] = message.error;
+        }
+      });
+    },
+    (filePath, error) => {
+      errors[filePath] = error.message;
+      logger.warn('visualHash', 'isolated image after native worker crash', {
+        file: path.basename(filePath),
+        error: error.message,
+      });
+    },
+  );
+
+  return { hashes, errors };
 }
 
 async function computeContentHashForFile(filePath: string, signal?: AbortSignal): Promise<string> {

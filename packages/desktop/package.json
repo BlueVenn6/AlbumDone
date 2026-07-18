@@ -1,6 +1,6 @@
 {
   "name": "@photo-manager/desktop",
-  "version": "0.1.2-beta.3",
+  "version": "0.1.2-beta.4",
   "description": "AlbumDone - local-first photo manager",
   "author": "AlbumDone",
   "private": true,
@@ -71,10 +71,11 @@
     "electron": "cross-env NODE_ENV=development node scripts/start-electron.cjs",
     "typecheck": "npm run build:shared && tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
-    "test": "npm run build:main && node tests/asyncTimeout.test.cjs && node tests/yearInReviewMonthPlan.test.cjs && node tests/yearInReviewExport.test.cjs && node tests/yearInReviewIpcContract.test.cjs",
+    "test": "npm run build:main && node tests/asyncTimeout.test.cjs && node tests/resilientVisualHashBatch.test.cjs && node tests/yearInReviewMonthPlan.test.cjs && node tests/yearInReviewExport.test.cjs && node tests/yearInReviewIpcContract.test.cjs",
     "pretest:e2e": "electron-builder install-app-deps",
     "test:e2e": "node tests/electron.production.e2e.cjs",
     "benchmark:reproducible": "node scripts/benchmark-reproducible.cjs",
+    "validate:visual-hashes": "npm run build:main && cross-env ELECTRON_RUN_AS_NODE=1 electron scripts/validate-visual-hash-library.cjs",
     "package": "node scripts/package-desktop.cjs",
     "package:dir": "npm run build && electron-builder --dir"
   },

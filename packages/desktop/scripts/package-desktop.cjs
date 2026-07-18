@@ -101,7 +101,11 @@ fs.writeFileSync(distManifestPath, `${JSON.stringify(sourceSnapshot, null, 2)}\n
 
 run(process.execPath, [builderCli, '--win', 'nsis', `--config.electronDist=${electronDist}`], {
   cwd: desktopRoot,
-  env: { ...process.env, ALBUMDONE_BUILD_ID: buildId },
+  env: {
+    ...process.env,
+    ALBUMDONE_BUILD_ID: buildId,
+    ELECTRON_BUILDER_COMPRESSION_LEVEL: '5',
+  },
 });
 
 const releaseDirectory = path.join(desktopRoot, 'release');

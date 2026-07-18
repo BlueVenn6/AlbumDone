@@ -9,10 +9,23 @@ type VisualHashWorkerRequest = {
   filePaths: string[];
 };
 
-type VisualHashWorkerResponse = {
-  hashes: Record<string, string>;
-  errors: Record<string, string>;
-};
+type VisualHashWorkerResponse =
+  | { type: 'result'; filePath: string; hash: string }
+  | { type: 'result'; filePath: string; error: string }
+  | { type: 'done' };
+
+function sendResponse(response: VisualHashWorkerResponse): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!process.send) {
+      reject(new Error('Visual hash worker IPC is unavailable.'));
+      return;
+    }
+    process.send(response, (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
 
 async function computeVisualHash(filePath: string): Promise<string> {
   try {
@@ -55,24 +68,25 @@ async function computeVisualHash(filePath: string): Promise<string> {
 
 process.once('message', (request: VisualHashWorkerRequest) => {
   void (async () => {
-    const response: VisualHashWorkerResponse = { hashes: {}, errors: {} };
-    let nextIndex = 0;
-    const consume = async () => {
-      while (nextIndex < request.filePaths.length) {
-        const filePath = request.filePaths[nextIndex++]!;
-        try {
-          response.hashes[filePath] = await computeVisualHash(filePath);
-        } catch (error) {
-          response.errors[filePath] = error instanceof Error ? error.message : String(error);
-        }
+    for (const filePath of request.filePaths) {
+      try {
+        const hash = await computeVisualHash(filePath);
+        await sendResponse({ type: 'result', filePath, hash });
+      } catch (error) {
+        await sendResponse({
+          type: 'result',
+          filePath,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-    };
-    await Promise.all(Array.from({ length: 8 }, consume));
-    process.send?.(response, () => process.exit(0));
+    }
+    await sendResponse({ type: 'done' });
+    process.exit(0);
   })().catch((error) => {
-    process.send?.({
-      hashes: {},
-      errors: { __worker: error instanceof Error ? error.message : String(error) },
-    }, () => process.exit(1));
+    void sendResponse({
+      type: 'result',
+      filePath: '__worker',
+      error: error instanceof Error ? error.message : String(error),
+    }).finally(() => process.exit(1));
   });
 });
