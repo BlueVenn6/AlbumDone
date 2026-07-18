@@ -17,7 +17,13 @@
     },
     "files": [
       "dist/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/@photo-manager/shared/.turbo/**/*",
+      "!node_modules/@photo-manager/shared/public/**/*",
+      "!node_modules/@photo-manager/shared/scripts/**/*",
+      "!node_modules/@photo-manager/shared/src/**/*",
+      "!node_modules/@photo-manager/shared/tests/**/*",
+      "!node_modules/@photo-manager/shared/tsconfig.json"
     ],
     "extraResources": [
       {

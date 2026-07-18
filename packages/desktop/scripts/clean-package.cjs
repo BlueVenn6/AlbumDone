@@ -3,7 +3,9 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const generatedTargets = [
+  path.join(repoRoot, 'packages/shared/.turbo'),
   path.join(repoRoot, 'packages/shared/dist'),
+  path.join(repoRoot, 'packages/desktop/.turbo'),
   path.join(repoRoot, 'packages/desktop/dist'),
   path.join(repoRoot, 'packages/desktop/release'),
 ];

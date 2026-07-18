@@ -11,6 +11,7 @@ const electronPackage = require(electronPackagePath);
 const electronDist = path.join(path.dirname(electronPackagePath), 'dist');
 const npmCli = process.env.npm_execpath;
 const builderCli = require.resolve('electron-builder/out/cli/cli.js');
+const asar = require('@electron/asar');
 
 if (!npmCli) {
   throw new Error('npm_execpath is unavailable; run this script through npm.');
@@ -109,6 +110,25 @@ run(process.execPath, [builderCli, '--win', 'nsis', `--config.electronDist=${ele
 });
 
 const releaseDirectory = path.join(desktopRoot, 'release');
+const packagedResources = path.join(releaseDirectory, 'win-unpacked/resources');
+const packagedAsar = path.join(packagedResources, 'app.asar');
+const forbiddenSharedEntries = ['.turbo', 'public', 'scripts', 'src', 'tests', 'tsconfig.json'];
+const asarEntries = asar.listPackage(packagedAsar).map((entry) => entry.replaceAll('\\', '/'));
+for (const entry of forbiddenSharedEntries) {
+  const archivePrefix = `/node_modules/@photo-manager/shared/${entry}`;
+  if (asarEntries.some((archiveEntry) => archiveEntry === archivePrefix || archiveEntry.startsWith(`${archivePrefix}/`))) {
+    throw new Error(`Unexpected shared development content in app.asar: ${entry}`);
+  }
+  const unpackedPath = path.join(
+    packagedResources,
+    'app.asar.unpacked/node_modules/@photo-manager/shared',
+    entry,
+  );
+  if (fs.existsSync(unpackedPath)) {
+    throw new Error(`Unexpected shared development content in unpacked application: ${entry}`);
+  }
+}
+
 const installers = fs.readdirSync(releaseDirectory)
   .filter((name) => name.toLowerCase().endsWith('.exe'))
   .map((name) => path.join(releaseDirectory, name));
