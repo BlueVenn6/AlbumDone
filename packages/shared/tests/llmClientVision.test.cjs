@@ -266,6 +266,100 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     assert.strictEqual(proxyTestBody.messages[0].content[1].type, 'text');
 
     calls.length = 0;
+    const responsesProxyClient = new LLMClient({
+      provider: 'anthropic',
+      apiKey: 'proxy-key',
+      model: 'claude-sonnet-5',
+      baseUrl: 'https://proxy.example.com/v1',
+      supportsVision: true,
+      mode: 'proxy',
+    });
+    const responsesProxyResult = await responsesProxyClient.chatWithImage(
+      'read the screenshot',
+      'ZmFrZS1pbWFnZQ==',
+      'image/jpeg',
+    );
+    assert.strictEqual(responsesProxyResult.content, 'vision ok');
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual(calls[0].url, 'https://proxy.example.com/v1/responses');
+
+    calls.length = 0;
+    global.fetch = async (url, init = {}) => {
+      calls.push({ url: String(url), init });
+      if (String(url).endsWith('/responses')) {
+        return jsonResponse({ error: { message: 'upstream unavailable' } }, 500);
+      }
+      if (String(url).endsWith('/chat/completions')) {
+        return jsonResponse({ error: { message: 'unsupported request shape' } }, 400);
+      }
+      return jsonResponse({ content: [{ type: 'text', text: 'native anthropic ok' }] });
+    };
+    const negotiatedAnthropicClient = new LLMClient({
+      provider: 'anthropic',
+      apiKey: 'proxy-key',
+      model: 'claude-sonnet-5',
+      baseUrl: 'https://proxy.example.com/v1',
+      supportsVision: true,
+      mode: 'proxy',
+    });
+    const negotiatedAnthropicResult = await negotiatedAnthropicClient.testConnection();
+    assert.deepStrictEqual(negotiatedAnthropicResult, {
+      success: true,
+      mode: 'vision',
+      resolvedProviderMode: 'direct',
+    });
+    assert.deepStrictEqual(calls.map((call) => call.url), [
+      'https://proxy.example.com/v1/responses',
+      'https://proxy.example.com/v1/chat/completions',
+      'https://proxy.example.com/v1/messages',
+    ]);
+
+    calls.length = 0;
+    global.fetch = async (url, init = {}) => {
+      calls.push({ url: String(url), init });
+      if (String(url).endsWith('/chat/completions')) {
+        return jsonResponse({ error: { message: 'unsupported request shape' } }, 400);
+      }
+      return jsonResponse({ output_text: 'fallback ok' });
+    };
+    const fallbackProxyClient = new LLMClient({
+      provider: 'custom',
+      apiKey: 'proxy-key',
+      model: 'vision-model',
+      baseUrl: 'https://proxy.example.com/v1',
+      supportsVision: true,
+      mode: 'proxy',
+    });
+    const fallbackProxyResult = await fallbackProxyClient.chatWithImage(
+      'read the screenshot',
+      'ZmFrZS1pbWFnZQ==',
+      'image/jpeg',
+    );
+    assert.strictEqual(fallbackProxyResult.content, 'fallback ok');
+    assert.deepStrictEqual(calls.map((call) => call.url), [
+      'https://proxy.example.com/v1/chat/completions',
+      'https://proxy.example.com/v1/responses',
+    ]);
+
+    calls.length = 0;
+    global.fetch = async (url, init = {}) => {
+      calls.push({ url: String(url), init });
+      return jsonResponse({
+        choices: [{ message: { content: '', reasoning_content: 'glm test ok' } }],
+      });
+    };
+    const glmReasoningClient = new LLMClient({
+      provider: 'zhipu',
+      apiKey: 'glm-key',
+      model: 'glm-5v-turbo',
+      supportsVision: true,
+      mode: 'direct',
+    });
+    const glmReasoningResult = await glmReasoningClient.testConnection();
+    assert.deepStrictEqual(glmReasoningResult, { success: true, mode: 'vision' });
+    assert.strictEqual(parseJsonBody(calls[0].init).max_tokens, 512);
+
+    calls.length = 0;
     const textOnlyClient = new LLMClient({
       provider: 'moonshot',
       apiKey: 'moonshot-key',

@@ -1,7 +1,11 @@
 // packages/shared/src/utils/httpUrl.ts
-var HTTP_URL_PATTERN = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]+)([^?#]*)?(\?[^#]*)?(?:#.*)?$/i;
 function trimTrailingSlashes(value) {
-  return value.trim().replace(/\/+$/, "");
+  const trimmed = value.trim();
+  let endIndex = trimmed.length;
+  while (endIndex > 0 && trimmed.charCodeAt(endIndex - 1) === 47) {
+    endIndex -= 1;
+  }
+  return trimmed.slice(0, endIndex);
 }
 function getHostnameFromAuthority(authority) {
   const withoutCredentials = authority.split("@").pop() ?? authority;
@@ -16,23 +20,44 @@ function parseHttpUrl(rawUrl) {
   if (!trimmed) {
     return null;
   }
-  const match = trimmed.match(HTTP_URL_PATTERN);
-  if (!match) {
+  const schemeEndIndex = trimmed.indexOf("://");
+  if (schemeEndIndex <= 0) {
     return null;
   }
-  const protocol = match[1]?.toLowerCase();
-  const authority = match[2];
-  if (!protocol || !authority || !["http", "https"].includes(protocol)) {
+  const protocol = trimmed.slice(0, schemeEndIndex).toLowerCase();
+  if (!["http", "https"].includes(protocol)) {
+    return null;
+  }
+  const authorityStartIndex = schemeEndIndex + 3;
+  let authorityEndIndex = trimmed.length;
+  for (let index = authorityStartIndex; index < trimmed.length; index += 1) {
+    const character = trimmed[index];
+    if (character === "/" || character === "?" || character === "#") {
+      authorityEndIndex = index;
+      break;
+    }
+    if (!character || character <= " " || '"<>\\^`{|}'.includes(character)) {
+      return null;
+    }
+  }
+  const authority = trimmed.slice(authorityStartIndex, authorityEndIndex);
+  if (!authority) {
     return null;
   }
   const hostname = getHostnameFromAuthority(authority);
   if (!hostname) {
     return null;
   }
+  const fragmentIndex = trimmed.indexOf("#", authorityEndIndex);
+  const contentEndIndex = fragmentIndex >= 0 ? fragmentIndex : trimmed.length;
+  const queryIndex = trimmed.indexOf("?", authorityEndIndex);
+  const hasQuery = queryIndex >= 0 && queryIndex < contentEndIndex;
+  const pathEndIndex = hasQuery ? queryIndex : contentEndIndex;
+  const rawPathname = authorityEndIndex < pathEndIndex ? trimmed.slice(authorityEndIndex, pathEndIndex) : "";
   return {
     origin: `${protocol}://${authority}`,
-    pathname: match[3] || "/",
-    search: match[4] || "",
+    pathname: rawPathname || "/",
+    search: hasQuery ? trimmed.slice(queryIndex, contentEndIndex) : "",
     hostname
   };
 }
@@ -116,7 +141,7 @@ var PROVIDER_MODELS = {
   },
   minimax: {
     name: "MiniMax",
-    models: ["MiniMax-VL-01"],
+    models: ["MiniMax-M3"],
     supportsVision: true
   },
   deepseek: {
@@ -130,6 +155,13 @@ var PROVIDER_MODELS = {
     supportsVision: true
   }
 };
+function normalizeProviderModel(provider, model) {
+  const trimmedModel = model.trim();
+  if (provider === "minimax" && trimmedModel === "MiniMax-VL-01") {
+    return "MiniMax-M3";
+  }
+  return trimmedModel;
+}
 var VISION_MODELS = {
   openai: PROVIDER_MODELS.openai.models,
   anthropic: PROVIDER_MODELS.anthropic.models,
@@ -224,7 +256,11 @@ function resolveProviderRoute(providers, defaults = {}, options = {}) {
     if (!provider) {
       continue;
     }
-    const config2 = providers[provider];
+    const storedConfig = providers[provider];
+    const config2 = storedConfig ? {
+      ...storedConfig,
+      model: normalizeProviderModel(provider, storedConfig.model)
+    } : void 0;
     if (!config2 || !allowMissingApiKey && !hasConfiguredApiKey(config2)) {
       continue;
     }
@@ -248,7 +284,7 @@ function resolveProviderRoute(providers, defaults = {}, options = {}) {
   };
 }
 function formatProviderRouteLabel(route) {
-  return `${PROVIDER_MODELS[route.provider].name} \xB7 ${route.config.model}`;
+  return `${PROVIDER_MODELS[route.provider].name} \xB7 ${normalizeProviderModel(route.provider, route.config.model)}`;
 }
 
 // packages/shared/src/config/ports.ts
@@ -284,7 +320,7 @@ var DEFAULT_OPENAI_BASE_URLS = {
   moonshot: "https://api.moonshot.cn/v1",
   zhipu: "https://open.bigmodel.cn/api/paas/v4",
   qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  minimax: "https://api.minimax.chat/v1",
+  minimax: "https://api.minimaxi.com/v1",
   deepseek: "https://api.deepseek.com/v1",
   custom: `http://localhost:${APP_PORTS.localOpenAICompatible}/v1`
 };
@@ -477,17 +513,26 @@ var SECRET_QUERY_PARAMS = /* @__PURE__ */ new Set(["key", "api_key", "token", "a
 function isLoopbackHostname(hostname) {
   return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname.toLowerCase());
 }
-function assertSafeLLMEndpoint(url) {
-  const parsedUrl = new URL(url);
-  if (!["https:", "http:"].includes(parsedUrl.protocol)) {
-    throw new Error("Only HTTP(S) LLM endpoints are allowed.");
+function getQueryParameterNames(search) {
+  if (!search.startsWith("?")) {
+    return [];
   }
-  for (const key of parsedUrl.searchParams.keys()) {
+  return search.slice(1).split("&").map((entry) => entry.split("=", 1)[0] ?? "").filter(Boolean).map((name) => {
+    try {
+      return decodeURIComponent(name.replace(/\+/g, " "));
+    } catch {
+      return name;
+    }
+  });
+}
+function assertSafeLLMEndpoint(url) {
+  const parsedUrl = parseHttpUrlOrThrow(url);
+  for (const key of getQueryParameterNames(parsedUrl.search)) {
     if (SECRET_QUERY_PARAMS.has(key.toLowerCase())) {
       throw new Error("LLM endpoint URLs must not include API keys or tokens in query parameters.");
     }
   }
-  if (parsedUrl.protocol === "http:" && !isLoopbackHostname(parsedUrl.hostname)) {
+  if (parsedUrl.origin.toLowerCase().startsWith("http://") && !isLoopbackHostname(parsedUrl.hostname)) {
     throw new Error("Plain HTTP LLM endpoints are limited to localhost.");
   }
 }
@@ -521,6 +566,8 @@ var LLMClient = class {
   constructor(config) {
     this.config = config;
   }
+  config;
+  resolvedProviderMode;
   getRequiredApiKey() {
     const apiKey = String(this.config.apiKey ?? "").trim();
     if (apiKey) {
@@ -724,7 +771,14 @@ var LLMClient = class {
       });
     }
     const choice = data.choices[0];
-    const rawContent = choice.message?.content ?? choice.delta?.content ?? "";
+    const rawContent = [
+      choice.message?.content,
+      choice.delta?.content,
+      choice.message?.reasoning_content,
+      choice.delta?.reasoning_content,
+      choice.text,
+      data.output_text
+    ].find((value) => Array.isArray(value) ? value.length > 0 : value !== void 0 && value !== null && String(value).trim().length > 0) ?? "";
     const contentFromParts = Array.isArray(rawContent) ? rawContent.map((part) => {
       if (typeof part === "string") return part;
       if (part?.type === "text" && typeof part.text === "string") return part.text;
@@ -742,6 +796,39 @@ var LLMClient = class {
       content,
       ...usage ? { usage } : {}
     };
+  }
+  shouldPreferResponsesForProxy() {
+    return /^(?:gpt-5|o[134](?:-|$)|claude-)/i.test(this.config.model);
+  }
+  canRetryAlternateOpenAIProtocol(error) {
+    return error instanceof LLMClientError && Boolean(error.status && [400, 404, 405, 415, 422].includes(error.status));
+  }
+  canTryAnthropicNativeProtocol(error) {
+    return error instanceof LLMClientError && Boolean(error.status && [400, 404, 405, 415, 422, 500, 501, 502, 503, 504].includes(error.status));
+  }
+  async callOpenAIProxy(messages, options) {
+    const primary = this.shouldPreferResponsesForProxy() ? () => this.callOpenAIResponses(messages, options) : () => this.callOpenAICompatible(messages, options);
+    const alternate = this.shouldPreferResponsesForProxy() ? () => this.callOpenAICompatible(messages, options) : () => this.callOpenAIResponses(messages, options);
+    try {
+      const result = await primary();
+      this.resolvedProviderMode = "proxy";
+      return result;
+    } catch (primaryError) {
+      const shouldTryAlternate = this.canRetryAlternateOpenAIProtocol(primaryError) || this.config.provider === "anthropic" && this.canTryAnthropicNativeProtocol(primaryError);
+      if (!shouldTryAlternate) throw primaryError;
+      try {
+        const result = await alternate();
+        this.resolvedProviderMode = "proxy";
+        return result;
+      } catch (alternateError) {
+        if (this.config.provider !== "anthropic" || !this.canTryAnthropicNativeProtocol(alternateError)) {
+          throw alternateError;
+        }
+        const result = await this.callAnthropic(messages, options);
+        this.resolvedProviderMode = "direct";
+        return result;
+      }
+    }
   }
   buildResponsesInput(messages) {
     return messages.map((msg) => {
@@ -792,7 +879,7 @@ var LLMClient = class {
       input: this.buildResponsesInput(compressedMessages),
       max_output_tokens: options.maxTokens ?? 2048
     };
-    if (typeof options.temperature === "number") {
+    if (typeof options.temperature === "number" && !/^gpt-5(?:\.|-|$)/i.test(this.config.model)) {
       body.temperature = options.temperature;
     }
     const authKey = this.getRequiredApiKey();
@@ -1024,7 +1111,7 @@ var LLMClient = class {
   }
   async chat(messages, options = {}) {
     if (this.config.mode === "proxy") {
-      return this.callOpenAICompatible(messages, options);
+      return this.callOpenAIProxy(messages, options);
     }
     if (this.shouldUseResponsesApi()) {
       return this.callOpenAIResponses(messages, options);
@@ -1040,20 +1127,27 @@ var LLMClient = class {
   }
   async testConnection() {
     const isKimiK2 = this.config.provider === "moonshot" && this.config.model?.startsWith("kimi-k2");
-    const maxTokens = isKimiK2 ? 2048 : 32;
+    const isMiniMaxM3 = this.config.provider === "minimax" && this.config.model === "MiniMax-M3";
+    const isReasoningVisionModel = this.config.provider === "zhipu" && /(?:thinking|turbo|glm-5v)/i.test(this.config.model);
+    const maxTokens = isKimiK2 ? 2048 : isMiniMaxM3 || isReasoningVisionModel ? 512 : 32;
+    const timeoutMs = isMiniMaxM3 ? 6e4 : 2e4;
     const shouldTestVision = this.supportsVision();
     try {
       const response = shouldTestVision ? await this.chatWithImage(
         'This is an application-generated connection test image. Reply with just "ok".',
         CONNECTION_TEST_IMAGE_BASE64,
         "image/jpeg",
-        { maxTokens, temperature: 0, timeoutMs: 2e4 }
+        { maxTokens, temperature: 0, timeoutMs }
       ) : await this.chat(
         [{ role: "user", content: 'Reply with just "ok".' }],
-        { maxTokens, temperature: 0, timeoutMs: 2e4 }
+        { maxTokens, temperature: 0, timeoutMs }
       );
       if (response.content) {
-        return { success: true, mode: shouldTestVision ? "vision" : "text" };
+        return {
+          success: true,
+          mode: shouldTestVision ? "vision" : "text",
+          ...this.resolvedProviderMode && this.resolvedProviderMode !== this.config.mode ? { resolvedProviderMode: this.resolvedProviderMode } : {}
+        };
       }
       return {
         success: false,

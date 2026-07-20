@@ -79,6 +79,9 @@ declare global {
         }>;
       };
       settings: {
+        getProviderConfigs(): Promise<Partial<Record<LLMProvider, import('@photo-manager/shared').ProviderConfig>>>;
+        setProviderConfig(config: import('@photo-manager/shared').ProviderConfig): Promise<void>;
+        deleteProviderConfig(provider: string): Promise<void>;
         getApiKeyStatus(provider: string): Promise<{
           provider: LLMProvider;
           hasApiKey: boolean;

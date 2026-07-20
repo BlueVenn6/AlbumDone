@@ -71,6 +71,8 @@ const HIGH_RISK_CHANNELS = new Set([
   'tasks:saveCheckpoint',
   'tasks:deleteCheckpoint',
   'settings:setApiKey',
+  'settings:setProviderConfig',
+  'settings:deleteProviderConfig',
   'network:startLanServer',
   'llm:testConnection',
   'llm:chat',
@@ -103,6 +105,7 @@ const SCAN_FILE_CONCURRENCY = 16;
 const MAX_LLM_BODY_BYTES = 12 * 1024 * 1024;
 const CREDENTIAL_OPERATION_TIMEOUT_MS = 5000;
 const TEST_CONNECTION_TIMEOUT_MS = 25000;
+const PROVIDER_CONFIG_FILENAME = 'provider-configs.json';
 const MAX_VISUAL_HASH_PHOTOS = 6000;
 const VISUAL_HASH_SIZE = 32;
 const THUMBNAIL_CACHE_DIR_NAME = 'photo-manager-thumbs';
@@ -3338,6 +3341,85 @@ export function setupIpcHandlers(): void {
     getOutputRoot: getAppOutputRoot,
     getPreferredLocale,
     generateYearInReview,
+  });
+
+  let providerConfigMutation = Promise.resolve();
+
+  const readProviderConfigs = async (): Promise<Partial<Record<LLMProvider, ProviderConfig>>> => {
+    const configPath = path.join(app.getPath('userData'), PROVIDER_CONFIG_FILENAME);
+    try {
+      const parsed = JSON.parse(await fs.promises.readFile(configPath, 'utf8')) as Partial<Record<LLMProvider, ProviderConfig>>;
+      const result: Partial<Record<LLMProvider, ProviderConfig>> = {};
+      for (const [rawProvider, rawConfig] of Object.entries(parsed)) {
+        const provider = assertLLMProvider(rawProvider);
+        if (!rawConfig || typeof rawConfig !== 'object') continue;
+        const model = assertString(rawConfig.model, 'model');
+        const mode = assertProviderMode(rawConfig.mode);
+        const baseUrl = assertSafeEndpointUrl(rawConfig.baseUrl);
+        result[provider] = {
+          provider,
+          model,
+          mode,
+          supportsVision: Boolean(rawConfig.supportsVision),
+          hasApiKey: Boolean(rawConfig.hasApiKey),
+          ...(baseUrl ? { baseUrl } : {}),
+        };
+      }
+      return result;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+      if (error instanceof SyntaxError) {
+        logger.warn('settings', 'Ignoring malformed provider metadata; secure API keys are unaffected.');
+        return {};
+      }
+      throw error;
+    }
+  };
+
+  const writeProviderConfigs = async (configs: Partial<Record<LLMProvider, ProviderConfig>>): Promise<void> => {
+    const configPath = path.join(app.getPath('userData'), PROVIDER_CONFIG_FILENAME);
+    const temporaryPath = `${configPath}.tmp`;
+    await fs.promises.writeFile(temporaryPath, JSON.stringify(configs, null, 2), 'utf8');
+    await fs.promises.rename(temporaryPath, configPath);
+  };
+
+  const mutateProviderConfigs = async (
+    mutation: (configs: Partial<Record<LLMProvider, ProviderConfig>>) => void,
+  ): Promise<void> => {
+    const operation = providerConfigMutation.then(async () => {
+      const configs = await readProviderConfigs();
+      mutation(configs);
+      await writeProviderConfigs(configs);
+    });
+    providerConfigMutation = operation.catch(() => undefined);
+    await operation;
+  };
+
+  safeHandle('settings:getProviderConfigs', async () => readProviderConfigs());
+
+  safeHandle('settings:setProviderConfig', async (_event, rawConfig: ProviderConfig) => {
+    if (!rawConfig || typeof rawConfig !== 'object') throw new Error('Invalid provider configuration.');
+    const provider = assertLLMProvider(rawConfig.provider);
+    const model = assertString(rawConfig.model, 'model');
+    const mode = assertProviderMode(rawConfig.mode);
+    const baseUrl = assertSafeEndpointUrl(rawConfig.baseUrl);
+    await mutateProviderConfigs((configs) => {
+      configs[provider] = {
+        provider,
+        model,
+        mode,
+        supportsVision: Boolean(rawConfig.supportsVision),
+        hasApiKey: Boolean(rawConfig.hasApiKey),
+        ...(baseUrl ? { baseUrl } : {}),
+      };
+    });
+  });
+
+  safeHandle('settings:deleteProviderConfig', async (_event, rawProvider: string) => {
+    const provider = assertLLMProvider(rawProvider);
+    await mutateProviderConfigs((configs) => {
+      delete configs[provider];
+    });
   });
 
   // ----- LLM IPC bridge (avoids CORS in renderer) -----

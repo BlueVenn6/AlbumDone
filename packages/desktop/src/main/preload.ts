@@ -126,6 +126,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Settings / credential store
   settings: {
+    getProviderConfigs: () => invoke('settings:getProviderConfigs'),
+    setProviderConfig: (config: unknown) => invoke('settings:setProviderConfig', config),
+    deleteProviderConfig: (provider: string) => invoke('settings:deleteProviderConfig', provider),
     getApiKeyStatus: (provider: string) =>
       invoke('settings:getApiKeyStatus', provider),
     setApiKey: (provider: string, apiKey: string) =>

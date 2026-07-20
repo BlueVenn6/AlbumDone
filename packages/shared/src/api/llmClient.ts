@@ -69,6 +69,7 @@ function assertSafeLLMEndpoint(url: string): void {
 export type TestConnectionResult = {
   success: boolean;
   mode?: 'text' | 'vision';
+  resolvedProviderMode?: 'direct' | 'proxy';
   error?: string;
   category?: LLMErrorCategory;
   status?: number;
@@ -137,6 +138,7 @@ export async function testLLMConnection(
 }
 
 export class LLMClient {
+  private resolvedProviderMode?: 'direct' | 'proxy';
   constructor(private config: ProviderConfig) {}
 
   private getRequiredApiKey(): string {
@@ -423,7 +425,18 @@ export class LLMClient {
     }
 
     const choice = data.choices[0];
-    const rawContent = choice.message?.content ?? choice.delta?.content ?? '';
+    const rawContent = [
+      choice.message?.content,
+      choice.delta?.content,
+      choice.message?.reasoning_content,
+      choice.delta?.reasoning_content,
+      choice.text,
+      data.output_text,
+    ].find((value) => (
+      Array.isArray(value)
+        ? value.length > 0
+        : value !== undefined && value !== null && String(value).trim().length > 0
+    )) ?? '';
     const contentFromParts = Array.isArray(rawContent)
       ? rawContent.map((part) => {
           if (typeof part === 'string') return part;
@@ -449,6 +462,55 @@ export class LLMClient {
       content,
       ...(usage ? { usage } : {}),
     };
+  }
+
+  private shouldPreferResponsesForProxy(): boolean {
+    return /^(?:gpt-5|o[134](?:-|$)|claude-)/i.test(this.config.model);
+  }
+
+  private canRetryAlternateOpenAIProtocol(error: unknown): boolean {
+    return error instanceof LLMClientError
+      && Boolean(error.status && [400, 404, 405, 415, 422].includes(error.status));
+  }
+
+  private canTryAnthropicNativeProtocol(error: unknown): boolean {
+    return error instanceof LLMClientError
+      && Boolean(error.status && [400, 404, 405, 415, 422, 500, 501, 502, 503, 504].includes(error.status));
+  }
+
+  private async callOpenAIProxy(
+    messages: LLMMessage[],
+    options: LLMRequestOptions,
+  ): Promise<LLMResponse> {
+    const primary = this.shouldPreferResponsesForProxy()
+      ? () => this.callOpenAIResponses(messages, options)
+      : () => this.callOpenAICompatible(messages, options);
+    const alternate = this.shouldPreferResponsesForProxy()
+      ? () => this.callOpenAICompatible(messages, options)
+      : () => this.callOpenAIResponses(messages, options);
+
+    try {
+      const result = await primary();
+      this.resolvedProviderMode = 'proxy';
+      return result;
+    } catch (primaryError) {
+      const shouldTryAlternate = this.canRetryAlternateOpenAIProtocol(primaryError)
+        || (this.config.provider === 'anthropic' && this.canTryAnthropicNativeProtocol(primaryError));
+      if (!shouldTryAlternate) throw primaryError;
+
+      try {
+        const result = await alternate();
+        this.resolvedProviderMode = 'proxy';
+        return result;
+      } catch (alternateError) {
+        if (this.config.provider !== 'anthropic' || !this.canTryAnthropicNativeProtocol(alternateError)) {
+          throw alternateError;
+        }
+        const result = await this.callAnthropic(messages, options);
+        this.resolvedProviderMode = 'direct';
+        return result;
+      }
+    }
   }
 
   private buildResponsesInput(messages: LLMMessage[]): Array<Record<string, unknown>> {
@@ -801,7 +863,7 @@ export class LLMClient {
 
   async chat(messages: LLMMessage[], options: LLMRequestOptions = {}): Promise<LLMResponse> {
     if (this.config.mode === 'proxy') {
-      return this.callOpenAICompatible(messages, options);
+      return this.callOpenAIProxy(messages, options);
     }
     if (this.shouldUseResponsesApi()) {
       return this.callOpenAIResponses(messages, options);
@@ -822,7 +884,9 @@ export class LLMClient {
       this.config.provider === 'moonshot' && this.config.model?.startsWith('kimi-k2');
     const isMiniMaxM3 =
       this.config.provider === 'minimax' && this.config.model === 'MiniMax-M3';
-    const maxTokens = isKimiK2 ? 2048 : isMiniMaxM3 ? 512 : 32;
+    const isReasoningVisionModel = this.config.provider === 'zhipu'
+      && /(?:thinking|turbo|glm-5v)/i.test(this.config.model);
+    const maxTokens = isKimiK2 ? 2048 : isMiniMaxM3 || isReasoningVisionModel ? 512 : 32;
     const timeoutMs = isMiniMaxM3 ? 60000 : 20000;
     const shouldTestVision = this.supportsVision();
 
@@ -840,7 +904,13 @@ export class LLMClient {
         );
 
       if (response.content) {
-        return { success: true, mode: shouldTestVision ? 'vision' : 'text' };
+        return {
+          success: true,
+          mode: shouldTestVision ? 'vision' : 'text',
+          ...(this.resolvedProviderMode && this.resolvedProviderMode !== this.config.mode
+            ? { resolvedProviderMode: this.resolvedProviderMode }
+            : {}),
+        };
       }
       return {
         success: false,

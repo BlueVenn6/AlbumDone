@@ -240,6 +240,53 @@ async function main() {
     assert.strictEqual(rejected.success, false, 'Mock authentication failure should be reported');
     assert.strictEqual(rejected.status, 401);
 
+    await page.evaluate(() => { location.hash = '#/settings'; });
+    await page.reload();
+    await page.waitForFunction(() => document.body.innerText.includes('API Configuration'));
+    const customHeader = page.getByRole('button', { name: /Custom Endpoint/i }).first();
+    await customHeader.click();
+    const customCard = customHeader.locator('..');
+    const customInputs = customCard.locator('input');
+    await customInputs.nth(0).fill('mock-key');
+    await customInputs.nth(1).fill(mock.baseUrl);
+    await customInputs.nth(2).fill('mock-vision');
+    await customCard.getByRole('button', { name: /OpenAI-compatible proxy/i }).click();
+    await customCard.getByRole('button', { name: /Test Connection/i }).click();
+    await customCard.getByText(/Connection successful/i).waitFor({
+      state: 'visible',
+      timeout: 30000,
+    });
+    const successResult = customCard.getByText(/Connection successful/i);
+    assert.strictEqual(await successResult.isVisible(), true, 'Successful test result must be visible');
+
+    const persistedProviders = await page.evaluate(async ({ baseUrl }) => {
+      await Promise.all([
+        window.electronAPI.settings.setProviderConfig({
+          provider: 'custom', baseUrl, model: 'first-model', supportsVision: true, hasApiKey: true, mode: 'proxy',
+        }),
+        window.electronAPI.settings.setProviderConfig({
+          provider: 'anthropic', baseUrl, model: 'claude-test', supportsVision: true, hasApiKey: true, mode: 'direct',
+        }),
+        window.electronAPI.settings.setProviderConfig({
+          provider: 'minimax', model: 'minimax-test', supportsVision: true, hasApiKey: true, mode: 'direct',
+        }),
+      ]);
+      await window.electronAPI.settings.setProviderConfig({
+        provider: 'custom', baseUrl, model: 'verified-model', supportsVision: true, hasApiKey: true, mode: 'direct',
+      });
+      const providers = await window.electronAPI.settings.getProviderConfigs();
+      return providers;
+    }, { baseUrl: mock.baseUrl });
+    assert.strictEqual(persistedProviders.custom.model, 'verified-model');
+    assert.strictEqual(persistedProviders.custom.mode, 'direct');
+    assert.strictEqual(persistedProviders.anthropic.model, 'claude-test');
+    assert.strictEqual(persistedProviders.minimax.model, 'minimax-test');
+    const providerConfigText = fs.readFileSync(
+      path.join(userData, 'provider-configs.json'),
+      'utf8',
+    );
+    assert(!providerConfigText.includes('mock-key'), 'Provider metadata file must not contain API keys');
+
     const deletion = await page.evaluate(async (target) => (
       window.electronAPI.fs.deleteFiles([target])
     ), duplicateTarget);

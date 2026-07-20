@@ -80,6 +80,22 @@ export function SettingsScreen(): React.JSX.Element {
   const settings = useSettingsStore();
   const { t } = useTranslation();
   const [expandedProvider, setExpandedProvider] = useState<LLMProvider | null>(null);
+
+  useEffect(() => {
+    const storage = window.electronAPI?.settings;
+    if (!storage) return;
+    storage.getProviderConfigs().then(async (savedProviders) => {
+      if (Object.keys(savedProviders).length > 0) {
+        for (const [provider, config] of Object.entries(savedProviders)) {
+          if (config) settings.updateProvider(provider as LLMProvider, config);
+        }
+        return;
+      }
+      for (const config of Object.values(settings.providers)) {
+        if (config) await storage.setProviderConfig(config);
+      }
+    }).catch(() => undefined);
+  }, []);
   const visionProviders = getConfiguredProviders(settings.providers, {
     requiresVision: true,
     allowMissingApiKey: true,
@@ -255,18 +271,16 @@ function ProviderCard({
       }
       setApiKey('');
     }
-    onSave({
+    const persistedConfig = {
       ...nextConfig,
       hasApiKey: Boolean(trimmedApiKey || nextConfig.hasApiKey),
-    });
+    };
+    await window.electronAPI?.settings?.setProviderConfig(persistedConfig);
+    onSave(persistedConfig);
   }, [apiKey, onSave, providerKey]);
 
   // Persist to Electron secure storage AND the zustand store on every save.
   const handleSave = useCallback(async () => {
-    if (providerKey === 'qwen' && mode === 'direct' && !baseUrl.trim()) {
-      setTestResult({ ok: false, msg: t('settings.apiConfig.qwenWorkspaceRequired') });
-      return;
-    }
     const endpointRisk = getEndpointRiskKey(baseUrl);
     if (endpointRisk?.level === 'blocked') {
       window.alert(t(endpointRisk.key));
@@ -276,19 +290,15 @@ function ProviderCard({
       return;
     }
     await persistCurrentConfig(buildCurrentConfig());
-  }, [baseUrl, buildCurrentConfig, mode, persistCurrentConfig, providerKey, t]);
+  }, [baseUrl, buildCurrentConfig, persistCurrentConfig, t]);
 
   const handleTest = useCallback(async () => {
     if (!apiKey.trim() && !keyStatus?.hasApiKey && !config?.hasApiKey) return;
-    if (providerKey === 'qwen' && mode === 'direct' && !baseUrl.trim()) {
-      setTestResult({ ok: false, msg: t('settings.apiConfig.qwenWorkspaceRequired') });
-      return;
-    }
     setTesting(true);
     setTestResult(null);
     try {
       const nextConfig = buildCurrentConfig();
-      const { success, error, category, status } = await window.electronAPI!.llm.testConnection({
+      const { success, error, category, status, resolvedProviderMode } = await window.electronAPI!.llm.testConnection({
         provider: providerKey,
         ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
         baseUrl: nextConfig.baseUrl,
@@ -297,7 +307,10 @@ function ProviderCard({
         mode: nextConfig.mode,
       });
       if (success) {
-        await persistCurrentConfig(nextConfig);
+        await persistCurrentConfig({
+          ...nextConfig,
+          ...(resolvedProviderMode ? { mode: resolvedProviderMode } : {}),
+        });
       }
       const errorKey = category ? API_ERROR_KEY_BY_CATEGORY[category] : undefined;
       const statusSuffix = status ? ` (HTTP ${status})` : '';
@@ -314,15 +327,17 @@ function ProviderCard({
 
   const handleRemove = useCallback(async () => {
     await window.electronAPI?.settings?.deleteApiKey(providerKey);
+    await window.electronAPI?.settings?.deleteProviderConfig(providerKey);
     onRemove();
     setApiKey('');
     setKeyStatus(null);
     setTestResult(null);
   }, [onRemove, providerKey]);
 
-  const isConfigured = Boolean(config?.hasApiKey || keyStatus?.hasApiKey);
+  const hasStoredKey = Boolean(config?.hasApiKey || keyStatus?.hasApiKey);
+  const isConfigured = hasStoredKey;
   const canTest = Boolean(apiKey.trim() || isConfigured);
-  const canSave = Boolean(apiKey.trim() || isConfigured);
+  const canSave = Boolean(apiKey.trim() || hasStoredKey);
 
   return (
     <div style={styles.providerCard}>
@@ -351,17 +366,13 @@ function ProviderCard({
 
           <div style={styles.field}>
             <label style={styles.fieldLabel}>
-              {t(providerKey === 'qwen' && mode === 'direct'
-                ? 'settings.apiConfig.qwenBaseUrlLabel'
-                : 'settings.apiConfig.baseUrlLabel')}
+              {t('settings.apiConfig.baseUrlLabel')}
             </label>
             <input
               type="text"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder={t(providerKey === 'qwen' && mode === 'direct'
-                ? 'settings.apiConfig.qwenBaseUrlPlaceholder'
-                : 'settings.apiConfig.baseUrlPlaceholder')}
+              placeholder={t('settings.apiConfig.baseUrlPlaceholder')}
               style={styles.input}
             />
           </div>
