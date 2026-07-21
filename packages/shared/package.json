@@ -19,7 +19,7 @@
     "zustand": "^4.5.0"
   },
   "optionalDependencies": {
-    "canvas": "^3.2.0"
+    "canvas": "^3.2.3"
   },
   "devDependencies": {
     "typescript": "^5.4.0"
