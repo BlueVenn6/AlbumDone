@@ -67,7 +67,7 @@ See the [bilingual user guide](docs/USER_GUIDE.md) for workflow instructions.
 
 ## Current Beta Status
 
-The source version is **v0.1.2-beta.4**. This Beta includes the current desktop provider compatibility fixes, dependency security updates, release source fingerprinting, production Electron workflow tests, reproducible performance checks, and crash isolation for visual hashing in large photo libraries.
+The source version is **v0.1.2-beta.7**. This Beta includes the current desktop provider compatibility fixes, dependency security updates, GitHub supply-chain hardening, release source fingerprinting, production Electron workflow tests, reproducible performance checks, and crash isolation for visual hashing in large photo libraries.
 
 Beta means the application is still being tested across more libraries and Windows environments. A successful automated test does not remove the need to review file operations in your own environment.
 
