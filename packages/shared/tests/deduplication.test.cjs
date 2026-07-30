@@ -1,4 +1,5 @@
 const assert = require('assert');
+const { performance } = require('perf_hooks');
 const {
   getSafeRejectedPhotoIds,
   groupSimilarPhotos,
@@ -36,6 +37,18 @@ function visualHashFromPattern(pattern) {
     }
   }
   return computeVisualHashSignature(pixels, 32, 32);
+}
+
+{
+  const repeatedDigits = '9'.repeat(100_000);
+  const startedAt = performance.now();
+  const groups = groupSimilarPhotos([
+    photo('long-filename-a', { filename: `IMG_${repeatedDigits}tail-a.JPG` }),
+    photo('long-filename-b', { filename: `IMG_${repeatedDigits}tail-b.JPG` }),
+  ]);
+
+  assert.deepStrictEqual(groups, []);
+  assert.ok(performance.now() - startedAt < 1_000, 'long filename sequences must be handled linearly');
 }
 
 assert.strictEqual(hammingDistance(0n, 0n), 0);

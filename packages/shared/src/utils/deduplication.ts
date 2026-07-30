@@ -75,15 +75,27 @@ function normalizeFilenameStem(filename: string): string {
 
 function getFilenameSequence(filename: string): FilenameSequence | null {
   const stem = filename.replace(/\.[^.]+$/, '').toLowerCase();
-  const match = stem.match(/^(.*?)(\d+)(?:\D*)$/);
-  if (!match) {
+  let numberEnd = stem.length;
+  while (numberEnd > 0) {
+    const code = stem.charCodeAt(numberEnd - 1);
+    if (code >= 48 && code <= 57) break;
+    numberEnd -= 1;
+  }
+  if (numberEnd === 0) {
     return null;
   }
 
-  const prefix = (match[1] ?? '')
+  let numberStart = numberEnd;
+  while (numberStart > 0) {
+    const code = stem.charCodeAt(numberStart - 1);
+    if (code < 48 || code > 57) break;
+    numberStart -= 1;
+  }
+
+  const prefix = stem.slice(0, numberStart)
     .replace(/\b(copy|duplicate|副本|拷贝|複本)\b/g, '')
     .replace(/[\s._()[\]-]+/g, '');
-  const number = Number.parseInt(match[2] ?? '', 10);
+  const number = Number.parseInt(stem.slice(numberStart, numberEnd), 10);
   if (!prefix || !Number.isFinite(number)) {
     return null;
   }

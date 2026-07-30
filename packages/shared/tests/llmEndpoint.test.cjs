@@ -1,4 +1,5 @@
 const assert = require('assert');
+const { performance } = require('perf_hooks');
 const {
   buildAnthropicMessagesUrl,
   buildGenerateContentUrl,
@@ -9,6 +10,29 @@ const {
   normalizeProviderBaseUrl,
   resolveLLMEndpoint,
 } = require('../dist/api/llmEndpoint');
+const { parseHttpUrl, trimTrailingSlashes } = require('../dist/utils/httpUrl');
+
+{
+  const trailingSlashes = '/'.repeat(100_000);
+  const longPath = 'a'.repeat(100_000);
+  const startedAt = performance.now();
+
+  assert.strictEqual(
+    trimTrailingSlashes(`  https://api.example.com/v1${trailingSlashes}  `),
+    'https://api.example.com/v1',
+  );
+  assert.deepStrictEqual(
+    parseHttpUrl(`https://API.EXAMPLE.COM/${longPath}?trace=1#ignored`),
+    {
+      origin: 'https://api.example.com',
+      pathname: `/${longPath}`,
+      search: '?trace=1',
+      hostname: 'api.example.com',
+    },
+  );
+  assert.strictEqual(parseHttpUrl(`a://${'"'.repeat(100_000)}`), null);
+  assert.ok(performance.now() - startedAt < 1_000, 'long URL inputs must be handled linearly');
+}
 
 assert.strictEqual(
   getDefaultProviderBaseUrl('minimax'),
