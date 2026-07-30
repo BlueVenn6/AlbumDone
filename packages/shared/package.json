@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.82",
-    "i18next": "^23.11.0",
+    "i18next": "^26.3.6",
     "immer": "^10.0.0",
     "tesseract.js": "^7.0.0",
     "zustand": "^4.5.0"

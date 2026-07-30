@@ -79,7 +79,7 @@
     "@photo-manager/shared": "*",
     "better-sqlite3": "12.6.2",
     "express": "4.22.2",
-    "i18next": "^23.16.8",
+    "i18next": "^26.3.6",
     "immer": "^10.2.0",
     "keytar": "^7.9.0",
     "qrcode": "^1.5.3",
