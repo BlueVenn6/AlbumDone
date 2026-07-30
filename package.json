@@ -1,0 +1,32 @@
+{
+  "name": "photo-manager",
+  "private": true,
+  "license": "MIT",
+  "workspaces": [
+    "packages/desktop",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev:desktop": "turbo run dev --filter=@photo-manager/desktop",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "icons:generate": "node packages/desktop/scripts/generate-icons.cjs",
+    "icons:audit": "node packages/desktop/scripts/audit-icons.cjs"
+  },
+  "overrides": {
+    "path-to-regexp": "0.1.13"
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^8.65.0",
+    "@vitejs/plugin-react": "4.7.0",
+    "eslint": "^8.57.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "form-data": "^4.0.6",
+    "turbo": "^2.10.5",
+    "typescript": "^5.4.0",
+    "vite": "6.4.3"
+  },
+  "packageManager": "npm@10.9.2"
+}
