@@ -78,7 +78,7 @@
     "@napi-rs/canvas": "^0.1.82",
     "@photo-manager/shared": "*",
     "better-sqlite3": "12.6.2",
-    "express": "4.22.2",
+    "express": "5.2.1",
     "i18next": "^23.16.8",
     "immer": "^10.2.0",
     "keytar": "^7.9.0",
