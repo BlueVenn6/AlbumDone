@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
+import { freeze } from 'immer';
 import type { CullingItem, CullingDecision, Photo } from '../types';
 import type { LLMClient } from '../api/llmClient';
 import { preProcessForCulling } from '../api/vision';
@@ -125,62 +126,62 @@ export const useCullingStore = create<CullingState>()(
       }
     },
 
-    decide: (photoId, decision) =>
-      set((state) => {
-        const itemIndex = state.items.findIndex((i) => i.photo.id === photoId);
-        if (itemIndex === -1) return;
+    decide: (photoId, decision) => {
+      // Search the immutable state: reading every item through an Immer draft
+      // creates thousands of proxies on every tap in a large review batch.
+      const state = get();
+      const itemIndex = state.items.findIndex((i) => i.photo.id === photoId);
+      if (itemIndex === -1) return;
 
-        const item = state.items[itemIndex]!;
-        // Save to history for undo
-        state.history.push({ photoId, previousDecision: item.decision });
+      const item = state.items[itemIndex]!;
+      const items = state.items.slice();
+      items[itemIndex] = { ...item, decision };
+      const allItems = state.allItems === state.items ? items : state.allItems.slice();
+      const allIdx = state.allItems.findIndex((i) => i.photo.id === photoId);
+      if (allIdx !== -1) {
+        allItems[allIdx] = { ...state.allItems[allIdx]!, decision };
+      }
 
-        // Update decision
-        item.decision = decision;
-
-        // Also update in allItems
-        const allIdx = state.allItems.findIndex((i) => i.photo.id === photoId);
-        if (allIdx !== -1) {
-          state.allItems[allIdx]!.decision = decision;
+      let nextIndex = -1;
+      for (let offset = 1; offset < items.length; offset++) {
+        const index = (itemIndex + offset) % items.length;
+        if (items[index]!.decision === 'pending') {
+          nextIndex = index;
+          break;
         }
+      }
+      set({
+        items: freeze(items, true),
+        allItems: freeze(allItems, true),
+        history: freeze([...state.history, { photoId, previousDecision: item.decision }], true),
+        currentIndex: nextIndex === -1 ? state.currentIndex : nextIndex,
+        isComplete: nextIndex === -1,
+      });
+    },
 
-        // Move to next item
-        const pendingCount = state.items.filter((i) => i.decision === 'pending').length;
-        if (pendingCount === 0) {
-          state.isComplete = true;
-        } else {
-          // Advance to next pending item
-          let next = (itemIndex + 1) % state.items.length;
-          let iterations = 0;
-          while (state.items[next]!.decision !== 'pending' && iterations < state.items.length) {
-            next = (next + 1) % state.items.length;
-            iterations++;
-          }
-          state.currentIndex = next;
-        }
-      }),
+    undoLast: () => {
+      const state = get();
+      if (state.history.length === 0) return;
 
-    undoLast: () =>
-      set((state) => {
-        if (state.history.length === 0) return;
-
-        const last = state.history.pop()!;
-        const item = state.items.find((i) => i.photo.id === last.photoId);
-        if (item) {
-          item.decision = last.previousDecision;
-        }
-
-        const allItem = state.allItems.find((i) => i.photo.id === last.photoId);
-        if (allItem) {
-          allItem.decision = last.previousDecision;
-        }
-
-        // Find the item's index and go back to it
-        const idx = state.items.findIndex((i) => i.photo.id === last.photoId);
-        if (idx !== -1) {
-          state.currentIndex = idx;
-        }
-        state.isComplete = false;
-      }),
+      const last = state.history[state.history.length - 1]!;
+      const idx = state.items.findIndex((i) => i.photo.id === last.photoId);
+      const items = state.items.slice();
+      if (idx !== -1) {
+        items[idx] = { ...items[idx]!, decision: last.previousDecision };
+      }
+      const allItems = state.allItems === state.items ? items : state.allItems.slice();
+      const allIdx = state.allItems.findIndex((i) => i.photo.id === last.photoId);
+      if (allIdx !== -1) {
+        allItems[allIdx] = { ...allItems[allIdx]!, decision: last.previousDecision };
+      }
+      set({
+        items: freeze(items, true),
+        allItems: freeze(allItems, true),
+        history: freeze(state.history.slice(0, -1), true),
+        currentIndex: idx === -1 ? state.currentIndex : idx,
+        isComplete: false,
+      });
+    },
 
     goToNext: () =>
       set((state) => {

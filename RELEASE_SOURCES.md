@@ -2,7 +2,7 @@
 
 Repository: BlueVenn6/AlbumDone. Candidate branch: release/windows-20260921.
 Baseline: installed 0.1.2-beta.10, commit d4b5e6ca0781c7f72e50f4fc4068587360a99d55.
-Candidate version: 0.1.2-beta.11; Electron 44.4.3; sharp 0.35.4.
+Candidate version: 0.1.2-beta.12; Electron 44.4.3; sharp 0.35.4.
 
 Use Node 22.12 or newer and npm ci. The postinstall step explicitly installs Electron 44's runtime. Mobile is maintained in a separate private repository; the old local monorepo master is not this release's source.
 
