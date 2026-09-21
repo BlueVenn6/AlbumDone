@@ -77,7 +77,7 @@
   "dependencies": {
     "@napi-rs/canvas": "^0.1.82",
     "@photo-manager/shared": "*",
-    "better-sqlite3": "12.6.2",
+    "better-sqlite3": "12.11.1",
     "express": "4.22.3",
     "i18next": "^23.16.8",
     "immer": "^10.2.0",
