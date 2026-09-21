@@ -976,7 +976,7 @@ async function scanPhotoFolder(folderPath: string, options: PhotoScanOptions = {
     if (rowsToUpsert.length >= 200) {
       upsertPhotoIndexRows(rowsToUpsert.splice(0));
     }
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => { setImmediate(resolve); });
     throwIfScanCancelled();
   };
 

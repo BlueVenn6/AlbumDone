@@ -707,6 +707,7 @@ async function generateYearInReview(
   outputDir: string,
   timeMode: TimeMode = 'rolling',
   localeTag?: string,
+  now = new Date(),
 ): Promise<YearInReviewResult> {
   try {
     const locale = normalizeReviewLocale(localeTag);
@@ -785,6 +786,7 @@ async function generateYearInReview(
         timestamp: photo.photoDate.getTime(),
       })),
       timeMode,
+      now,
     );
     if (layoutPlan.layout === 'empty') {
       throw new Error('No photos found in the selected time range.');

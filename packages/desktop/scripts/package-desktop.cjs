@@ -60,6 +60,7 @@ function hashTree(root) {
 const buildStartedAt = new Date();
 const head = git(['rev-parse', 'HEAD']);
 const gitStatus = git(['status', '--short']);
+if (gitStatus) throw new Error('Commit the tested release source before packaging.');
 const changedFiles = gitStatus
   .split(/\r?\n/)
   .filter(Boolean)
@@ -76,6 +77,8 @@ const sourceSnapshot = {
   desktopSourceSha256: hashTree(path.join(desktopRoot, 'src')),
   sharedSourceSha256: hashTree(path.join(repoRoot, 'packages/shared/src')),
   workingTreeDiffSha256: hash(git(['diff', '--binary', 'HEAD'])),
+  packageLockSha256: hash(fs.readFileSync(path.join(repoRoot, 'package-lock.json'))),
+  desktopPackageSha256: hash(fs.readFileSync(path.join(desktopRoot, 'package.json'))),
 };
 
 console.log(JSON.stringify(sourceSnapshot, null, 2));
@@ -100,6 +103,9 @@ if (installers.length !== 1) {
 }
 
 const artifactPath = installers[0];
+if (git(['rev-parse', 'HEAD']) !== head || git(['status', '--short'])) {
+  throw new Error('Source changed during packaging; this installer is not a release candidate.');
+}
 const artifactStat = fs.statSync(artifactPath);
 const buildFinishedAt = new Date();
 const releaseRecord = {

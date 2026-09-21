@@ -3,7 +3,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
-const { generateYearInReview } = require('../dist/main/yearInReview');
+const { generateYearInReview: generateWithClock } = require('../dist/main/yearInReview');
+
+const fixedNow = new Date(2026, 6, 25, 12);
+const generateYearInReview = (...args) => generateWithClock(...args, fixedNow);
 
 const fixtureDir = path.resolve(__dirname, '../../shared/tests/fixtures/dedupe-golden');
 const fixtureNames = [
@@ -106,6 +109,19 @@ async function main() {
     );
     assert(denseMonth.outputPath);
     assert.deepStrictEqual(await dimensions(denseMonth.outputPath), { width: 400, height: 2840 });
+
+    for (const [now, months, expectedSize] of [
+      [new Date(2026, 8, 25), 9, { width: 400, height: 3640 }],
+      [new Date(2026, 11, 31), 12, { width: 1600, height: 1240 }],
+    ]) {
+      const result = await generateWithClock(sparseMonths.map((month, i) => inputPhoto(i, month)),
+        outputDir, 'calendar', 'en', now);
+      assert.equal(result.monthsCovered, months);
+      assert.deepEqual(await dimensions(result.outputPath), expectedSize);
+    }
+    const nextYear = await generateWithClock(sparseMonths.map((month, i) => inputPhoto(i, month)),
+      outputDir, 'calendar', 'en', new Date(2027, 0, 1));
+    assert.equal(nextYear.outputPath, '', 'previous-year photos are excluded in a new calendar year');
 
     const empty = await generateYearInReview([], outputDir, 'calendar', 'en');
     assert.strictEqual(empty.outputPath, '');

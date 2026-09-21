@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, nativeTheme, protocol, clipboard, nativeImage, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, nativeTheme, protocol, clipboard, ClipboardItem, nativeImage, Menu } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Readable } from 'stream';
@@ -180,10 +180,12 @@ app.whenReady().then(async () => {
   protocol.handle('local-file', handleLocalRequest);
 
   // IPC: Copy image to clipboard from DataURL
-  ipcMain.on('image:copy-to-clipboard', (_event, dataUrl: string) => {
+  ipcMain.on('image:copy-to-clipboard', async (_event, dataUrl: string) => {
     try {
       const image = nativeImage.createFromDataURL(dataUrl);
-      clipboard.writeImage(image);
+      await clipboard.write([new ClipboardItem({
+        'image/png': new Blob([new Uint8Array(image.toPNG())], { type: 'image/png' }),
+      })]);
     } catch (err) {
       logger.error('ipc', 'Failed to copy image to clipboard', err);
     }

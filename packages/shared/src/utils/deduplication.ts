@@ -908,7 +908,7 @@ async function yieldDedupeWork(): Promise<void> {
     return;
   }
 
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
 }
 
 /**

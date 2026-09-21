@@ -74,7 +74,7 @@ export async function deletePhotosFromDisk(
         failedIds: attemptedIds.filter((id) => !batchDeletedSet.has(id)),
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
     }
   } else {
     for (const [index, filePath] of filePaths.entries()) {
@@ -95,7 +95,7 @@ export async function deletePhotosFromDisk(
       });
 
       if (index % DELETE_BATCH_SIZE === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
       }
     }
   }

@@ -603,8 +603,7 @@ export class LLMClient {
           parts.push(part.text);
         } else if (typeof part?.output_text === 'string') {
           parts.push(part.output_text);
-        } else if (part?.type === 'output_text' && typeof part?.text === 'string') {
-          parts.push(part.text);
+
         }
       }
     }
