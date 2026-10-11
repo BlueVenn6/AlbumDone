@@ -94,6 +94,7 @@ export function ScreenshotScreen(): React.JSX.Element {
   const [executing, setExecuting] = useState(false);
   const [currentOutput, setCurrentOutput] = useState('');
   const [actionError, setActionError] = useState('');
+  const deletionInProgress = useRef(false);
   const [phase, setPhase] = useState<'list' | 'processor' | 'summary'>('list');
   const [selectedScreenshots, setSelectedScreenshots] = useState<Set<string>>(new Set());
   const [selectedVisionProvider, setSelectedVisionProvider] = useState<LLMProvider | ''>('');
@@ -446,15 +447,18 @@ export function ScreenshotScreen(): React.JSX.Element {
     });
   };
 
-  const handleDelete = async (ids: string[], e?: React.MouseEvent) => {
+  const handleDelete = async (ids: string[], e?: React.MouseEvent, permanent = false) => {
     if (e) e.stopPropagation();
-    if (ids.length === 0) return;
-    if (!window.confirm(t('common.confirmDeleteCount', { count: ids.length }))) return;
+    if (ids.length === 0 || deletionInProgress.current || executing) return;
+    if (!permanent && !window.confirm(t('common.confirmDeleteCount', { count: ids.length }))) return;
 
     const itemsToDelete = screenshots.filter((p) => ids.includes(p.id));
 
-    if (window.electronAPI?.fs.deleteFiles) {
-      const result = await deletePhotosFromDisk(itemsToDelete);
+    deletionInProgress.current = true;
+    setActionError('');
+    try {
+      if (!window.electronAPI?.fs.deleteFiles) throw new Error(t('common.errors.unknown'));
+      const result = await deletePhotosFromDisk(itemsToDelete, { mode: permanent ? 'permanent' : 'trash' });
       if (result.errors.length > 0) {
         setActionError(result.errors.join('\n'));
       }
@@ -472,6 +476,10 @@ export function ScreenshotScreen(): React.JSX.Element {
         }
         await updateAlbumCountAfterLocalDelete(albumId, usePhotoStore.getState().photos.length);
       }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      deletionInProgress.current = false;
     }
   };
 
@@ -647,6 +655,9 @@ export function ScreenshotScreen(): React.JSX.Element {
               style={styles.bulkDeleteBtn}
             >
               {t('common.delete')} ({selectedScreenshots.size})
+            </button>
+            <button onClick={() => handleDelete(Array.from(selectedScreenshots), undefined, true)} style={styles.bulkDeleteBtn}>
+              {t('common.permanentDelete')}
             </button>
           </div>
         )}

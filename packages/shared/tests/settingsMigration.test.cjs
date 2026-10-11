@@ -3,6 +3,7 @@ const assert = require('assert');
 const persisted = JSON.stringify({
   state: {
     providers: {
+      deepseek: { provider: 'deepseek', model: 'deepseek-v4-flash', hasApiKey: true, mode: 'direct', supportsVision: false },
       minimax: {
         provider: 'minimax',
         model: 'MiniMax-VL-01',
@@ -35,6 +36,8 @@ global.localStorage = {
 
 const { useSettingsStore } = require('../dist/store/settingsStore');
 const state = useSettingsStore.getState();
+assert.strictEqual(state.providers.deepseek.model, 'deepseek-flash');
+assert.strictEqual(state.providers.deepseek.supportsVision, true);
 
 assert.strictEqual(state.providers.minimax.model, 'MiniMax-M3');
 assert.strictEqual(state.providers.google.model, 'gemini-2.5-flash');

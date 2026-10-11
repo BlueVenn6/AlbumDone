@@ -2,7 +2,7 @@ function readEnvNumber(key: string, fallback: number): number {
   const maybeProcess = globalThis as { process?: { env?: Record<string, string | undefined> } };
   const value = maybeProcess.process?.env?.[key];
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : fallback;
 }
 
 export const APP_PORTS = {

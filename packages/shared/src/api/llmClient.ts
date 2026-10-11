@@ -6,6 +6,7 @@ import {
   COMPAT_PROVIDER_B,
   modelSupportsVision,
   normalizeProviderModel,
+  PROVIDER_MODELS,
   type LLMMessage,
   type LLMResponse,
   type ProviderConfig,
@@ -128,6 +129,13 @@ function cleanLLMOutput(text: string): string {
     .replace(/^\s+|\s+$/g, '');
 }
 
+function isConnectionProbeResponse(text: string): boolean {
+  return cleanLLMOutput(text)
+    .replace(/[.!。！]+$/g, '')
+    .trim()
+    .toLowerCase() === 'ok';
+}
+
 const CONNECTION_TEST_IMAGE_BASE64 = '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';
 
 export async function testLLMConnection(
@@ -137,13 +145,8 @@ export async function testLLMConnection(
   const config: ProviderConfig = {
     provider,
     apiKey,
-    model:
-      provider === 'anthropic'
-        ? 'claude-3-5-sonnet-latest'
-        : provider === GENERATE_CONTENT_PROVIDER
-          ? GENERATE_CONTENT_FLASH_MODEL
-          : 'gpt-5.5',
-    supportsVision: true,
+    model: PROVIDER_MODELS[provider].models[0] ?? '',
+    supportsVision: modelSupportsVision(provider, PROVIDER_MODELS[provider].models[0] ?? ''),
   };
   const client = new LLMClient(config);
 
@@ -152,6 +155,9 @@ export async function testLLMConnection(
       [{ role: 'user', content: 'Reply with just "ok".' }],
       { maxTokens: 32, temperature: 0 },
     );
+    if (!isConnectionProbeResponse(result.content)) {
+      return { success: false, error: 'Model returned an unexpected connection-test response.', rawResponse: result };
+    }
     return { success: true, rawResponse: result };
   } catch (err) {
     if (err instanceof LLMClientError) {
@@ -964,7 +970,7 @@ export class LLMClient {
           { maxTokens, temperature: 0, timeoutMs },
         );
 
-      if (response.content) {
+      if (isConnectionProbeResponse(response.content)) {
         return {
           success: true,
           mode: shouldTestVision ? 'vision' : 'text',
@@ -976,8 +982,8 @@ export class LLMClient {
       return {
         success: false,
         mode: shouldTestVision ? 'vision' : 'text',
-        error: 'Empty model response.',
-        category: 'empty_response',
+        error: 'Model returned an unexpected connection-test response.',
+        category: response.content ? 'invalid_response' : 'empty_response',
       };
     } catch (err) {
       if (err instanceof LLMClientError) {

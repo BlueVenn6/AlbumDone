@@ -8,6 +8,9 @@ export type DeletePhotosResult = {
   successCount: number;
   errors: string[];
   fallbackTrashPaths: string[];
+  originalBytesRemoved: number;
+  cacheBytesRemoved: number;
+  cancelled: boolean;
 };
 
 export type DeletePhotosProgress = {
@@ -17,6 +20,7 @@ export type DeletePhotosProgress = {
 };
 
 export type DeletePhotosOptions = {
+  mode?: 'trash' | 'permanent';
   onBatch?: (progress: DeletePhotosProgress) => void | Promise<void>;
 };
 
@@ -33,26 +37,37 @@ export async function deletePhotosFromDisk(
   const errors: string[] = [];
   const fallbackTrashPaths: string[] = [];
   let successCount = 0;
+  let originalBytesRemoved = 0;
+  let cacheBytesRemoved = 0;
+  let cancelled = false;
 
   if (photos.length === 0) {
-    return { deletedIds, successCount, errors, fallbackTrashPaths };
+    return { deletedIds, successCount, errors, fallbackTrashPaths, originalBytesRemoved, cacheBytesRemoved, cancelled };
   }
 
   const pathToIds = new Map<string, string[]>();
-  const filePaths = photos.map((photo) => {
+  const uniquePaths = new Map<string, string>();
+  photos.forEach((photo) => {
     const filePath = localFileUriToPath(photo.uri);
     const key = normalizePathKey(filePath);
     const ids = pathToIds.get(key) ?? [];
     ids.push(photo.id);
     pathToIds.set(key, ids);
-    return filePath;
+    uniquePaths.set(key, filePath);
   });
+  const filePaths = [...uniquePaths.values()];
 
   if (window.electronAPI?.fs.deleteFiles) {
     for (let index = 0; index < filePaths.length; index += DELETE_BATCH_SIZE) {
       const batch = filePaths.slice(index, index + DELETE_BATCH_SIZE);
-      const result = await window.electronAPI.fs.deleteFiles(batch);
+      const result = await window.electronAPI.fs.deleteFiles(batch, options.mode ?? 'trash');
+      if (result.cancelled) {
+        cancelled = true;
+        break;
+      }
       successCount += result.successCount;
+      originalBytesRemoved += result.originalBytesRemoved ?? 0;
+      cacheBytesRemoved += result.cacheBytesRemoved ?? 0;
       errors.push(...result.errors);
       fallbackTrashPaths.push(...(result.fallbackTrashPaths ?? []));
 
@@ -77,6 +92,7 @@ export async function deletePhotosFromDisk(
       await new Promise((resolve) => { setTimeout(resolve, 0); });
     }
   } else {
+    if (options.mode === 'permanent') throw new Error('Permanent deletion is unavailable in this application version.');
     for (const [index, filePath] of filePaths.entries()) {
       const result = await window.electronAPI?.fs.moveToTrash(filePath);
       if (result?.success) {
@@ -100,5 +116,5 @@ export async function deletePhotosFromDisk(
     }
   }
 
-  return { deletedIds, successCount, errors, fallbackTrashPaths };
+  return { deletedIds, successCount, errors, fallbackTrashPaths, originalBytesRemoved, cacheBytesRemoved, cancelled };
 }

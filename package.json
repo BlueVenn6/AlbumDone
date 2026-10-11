@@ -17,7 +17,8 @@
     "postinstall": "node packages/desktop/scripts/install-electron.cjs"
   },
   "overrides": {
-    "path-to-regexp": "0.1.13"
+    "path-to-regexp": "0.1.13",
+    "proxy-addr": "2.0.8"
   },
   "devDependencies": {
     "@typescript-eslint/parser": "^8.65.0",

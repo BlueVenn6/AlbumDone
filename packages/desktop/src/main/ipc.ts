@@ -23,7 +23,8 @@ import {
   addAllowedLocalFileRoot,
   assertAllowedLocalFilePath,
 } from './localFileAccess';
-import { getExistingThumbnailPath, getThumbnailCacheRoot } from './thumbnailCache';
+import { getExistingThumbnailPath, getThumbnailCacheRoot, getPhotoCacheOwnerPrefix, purgePhotoCacheFiles, removeLegacyPhotoCacheFiles } from './thumbnailCache';
+import { deletePhotoFiles, type PhotoDeletionMode } from './photoDeletion';
 const { generateYearInReview } = require('./yearInReview') as {
   generateYearInReview: (
     photos: Array<{
@@ -207,28 +208,6 @@ function sanitizeIpcText(value: string): string {
     .replace(/\/(?:Users|home|var|tmp)\/[^\s"',)]+/g, '[local-path]');
 }
 
-function summarizeProviderResponseBody(body: string): string {
-  const sanitized = sanitizeIpcText(body).slice(0, 1200);
-  try {
-    const parsed = JSON.parse(sanitized) as {
-      error?: { message?: unknown; code?: unknown; type?: unknown };
-      message?: unknown;
-      code?: unknown;
-    };
-    const error = parsed.error;
-    const parts = [
-      typeof error?.code === 'string' ? `code=${error.code}` : null,
-      typeof error?.type === 'string' ? `type=${error.type}` : null,
-      typeof error?.message === 'string' ? error.message : null,
-      typeof parsed.code === 'string' ? `code=${parsed.code}` : null,
-      typeof parsed.message === 'string' ? parsed.message : null,
-    ].filter(Boolean);
-    return sanitizeIpcText(parts.join(' · ') || sanitized).slice(0, 600);
-  } catch {
-    return sanitized.slice(0, 600);
-  }
-}
-
 function sanitizeIpcPayload<T>(value: T): T {
   if (typeof value === 'string') {
     return sanitizeIpcText(value) as T;
@@ -366,7 +345,6 @@ const activeHeavyTaskControllers = new Map<string, AbortController>();
 
 async function runExclusiveHeavyTask<T>(
   key: string,
-  type: string,
   timeoutMs: number,
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
@@ -568,6 +546,12 @@ function assertPathAllowed(inputPath: string, action: string): string {
 
 function getThumbnailRoot(): string {
   return getThumbnailCacheRoot(app.getPath('userData'));
+}
+
+let cacheMigrationPromise: Promise<void> | null = null;
+function migratePhotoCaches(): Promise<void> {
+  cacheMigrationPromise ??= removeLegacyPhotoCacheFiles(getThumbnailRoot());
+  return cacheMigrationPromise;
 }
 
 function getAppOutputRoot(): string {
@@ -2020,6 +2004,7 @@ async function getThumbnailCachePath(
   size: number,
   variant = 'thumbnail',
 ): Promise<string> {
+  await migratePhotoCaches();
   const normalizedPath = normalizeNativePath(filePath);
   const fileStats = await fs.promises.stat(normalizedPath);
   const cacheKey = createHash('sha1')
@@ -2034,7 +2019,7 @@ async function getThumbnailCachePath(
     )
     .digest('hex');
 
-  return path.join(getThumbnailRoot(), `${cacheKey}.jpg`);
+  return path.join(getThumbnailRoot(), `${getPhotoCacheOwnerPrefix(normalizedPath)}${cacheKey}.jpg`);
 }
 
 async function ensureVisionPreview(filePath: string, maxDimension: number): Promise<string> {
@@ -2561,7 +2546,6 @@ export function setupIpcHandlers(): void {
 
       await runExclusiveHeavyTask(
         'content-hash',
-        'content-hash',
         30 * 60 * 1000,
         async (signal) => {
           for (const filePath of pathsToHash) {
@@ -2606,7 +2590,6 @@ export function setupIpcHandlers(): void {
 
       await runExclusiveHeavyTask(
         'visual-hash',
-        'visual-hash',
         30 * 60 * 1000,
         async (signal) => {
           const workerResult = await computeVisualHashesInWorker(pathsToHash, signal);
@@ -2636,31 +2619,16 @@ export function setupIpcHandlers(): void {
   safeHandle('fs:moveToTrash', async (_event, filePath: string) => {
     // Normalise to native separators (renderer passes forward-slash paths on Windows)
     const nativePath = assertImagePath(filePath, 'moveToTrash');
-    try {
-      // Use system trash (Recycle Bin on Windows, Trash on macOS/Linux)
-      await shell.trashItem(nativePath);
-      return { success: true };
-    } catch {
-      // Fallback: move to a .photo-manager-trash folder inside the album directory
-      // so the file stays close to its source and is recoverable.
-      let dest: string | null = null;
-      try {
-        const albumDir = path.dirname(nativePath);
-        const trashDir = path.join(albumDir, '.photo-manager-trash');
-        await fs.promises.mkdir(trashDir, { recursive: true });
-        const timestamp = Date.now();
-        dest = path.join(trashDir, `${timestamp}_${path.basename(nativePath)}`);
-        await fs.promises.copyFile(nativePath, dest);
-        await fs.promises.unlink(nativePath);
-        return { success: true, location: dest };
-      } catch (err2) {
-        if (dest) {
-          await fs.promises.unlink(dest).catch(() => undefined);
-        }
-        logger.error('fs', 'moveToTrash failed', err2);
-        return { success: false, error: err2 instanceof Error ? err2.message : String(err2) };
-      }
-    }
+    const result = await deletePhotoFiles([nativePath], {
+      mode: 'trash',
+      trashItem: (photoPath) => shell.trashItem(photoPath),
+      purgeCache: purgeDeletedPhotoCache,
+    });
+    return {
+      success: result.successCount === 1 && result.errors.length === 0,
+      ...(result.fallbackTrashPaths[0] ? { location: result.fallbackTrashPaths[0] } : {}),
+      ...(result.errors.length ? { error: result.errors.join('\n') } : {}),
+    };
   });
 
   safeHandle('fs:getFileStats', async (_event, filePath: string) => {
@@ -2977,6 +2945,7 @@ export function setupIpcHandlers(): void {
       options?: { mode?: 'fast' | 'full'; scanId?: string; streamResults?: boolean },
     ) => {
       const mode = options?.mode === 'fast' ? 'fast' : 'full';
+      await migratePhotoCaches();
       const scanId = options?.scanId;
       if (scanId && !validScanIdPattern.test(scanId)) {
         throw new Error('scanId is invalid.');
@@ -3107,60 +3076,50 @@ export function setupIpcHandlers(): void {
     };
   });
 
-  // Delete an array of file paths by moving them to the system trash.
-  // Verifies each file no longer exists after deletion.
-  // Returns successful paths so the renderer only removes photos that were
-  // actually moved away from the source folder.
-  safeHandle('fs:deleteFiles', async (_event, filePaths: string[]) => {
-    let successCount = 0;
-    const errors: string[] = [];
-    const deletedPaths: string[] = [];
-    const fallbackTrashPaths: string[] = [];
-    const nativePaths = assertStringArray(filePaths, 'filePaths')
-      .map((filePath) => assertImagePath(filePath, 'deleteFiles'));
-    for (const [index, nativePath] of nativePaths.entries()) {
-      if (!fs.existsSync(nativePath)) {
-        successCount++;
-        deletedPaths.push(nativePath);
-        continue;
-      }
-      try {
-        await shell.trashItem(nativePath);
-        // Verify the file is gone
-        try {
-          await fs.promises.access(nativePath);
-          // access() succeeded → file still exists
-          errors.push(`File still exists after deletion: ${nativePath}`);
-        } catch {
-          // access() threw → file is gone ✓
-          successCount++;
-          deletedPaths.push(nativePath);
-        }
-      } catch (err) {
-        // Fallback: move to .photo-manager-trash beside the album folder
-        let dest: string | null = null;
-        try {
-          const albumDir = path.dirname(nativePath);
-          const trashDir = path.join(albumDir, '.photo-manager-trash');
-          await fs.promises.mkdir(trashDir, { recursive: true });
-          dest = path.join(trashDir, `${Date.now()}_${index}_${path.basename(nativePath)}`);
-          await fs.promises.copyFile(nativePath, dest);
-          await fs.promises.unlink(nativePath);
-          successCount++;
-          deletedPaths.push(nativePath);
-          fallbackTrashPaths.push(dest);
-        } catch (err2) {
-          if (dest) {
-            await fs.promises.unlink(dest).catch(() => undefined);
-          }
-          logger.error('fs', 'deleteFiles fallback failed', err2);
-          errors.push(
-            `Failed to delete ${nativePath}: ${err2 instanceof Error ? err2.message : String(err2)}`,
-          );
-        }
+  async function purgeDeletedPhotoCache(filePath: string): Promise<number> {
+    const prefix = getPhotoCacheOwnerPrefix(filePath);
+    await Promise.allSettled([...thumbnailJobs.entries()]
+      .filter(([cachePath]) => path.basename(cachePath).startsWith(prefix))
+      .map(([, job]) => job));
+    const database = getDb();
+    const key = photoIndexKey(filePath);
+    ensurePhotoIndexSchema(database);
+    const rows = database.prepare('SELECT thumbnail_path FROM photo_index WHERE file_path_key = ?')
+      .all(key) as Array<{ thumbnail_path: string | null }>;
+    const removedBytes = await purgePhotoCacheFiles(getThumbnailRoot(), filePath,
+      rows.flatMap((row) => row.thumbnail_path ? [row.thumbnail_path] : []));
+    database.prepare('DELETE FROM photo_index WHERE file_path_key = ?').run(key);
+    return removedBytes;
+  }
+
+  // Permanent deletion is separately confirmed by the native application.
+  safeHandle('fs:deleteFiles', async (event, filePaths: string[], mode: PhotoDeletionMode = 'trash') => {
+    if (mode !== 'trash' && mode !== 'permanent') throw new Error('Invalid photo deletion mode.');
+    const nativePaths = [...new Set(assertStringArray(filePaths, 'filePaths')
+      .map((filePath) => assertImagePath(filePath, 'deleteFiles')))];
+    if (mode === 'permanent' && nativePaths.length > 0) {
+      const chinese = (await getPreferredLocale())?.startsWith('zh');
+      const parent = BrowserWindow.fromWebContents(event.sender);
+      const options = {
+        type: 'warning' as const,
+        title: chinese ? '永久删除照片' : 'Permanently delete photos',
+        message: chinese ? `永久删除 ${nativePaths.length} 张照片并释放空间？` : `Permanently delete ${nativePaths.length} photos and release storage?`,
+        detail: chinese ? '这会删除原文件及对应的应用缓存，不经过回收站，无法撤销。' : 'This removes the originals and their app caches, bypasses the recycle bin, and cannot be undone.',
+        buttons: chinese ? ['取消', '永久删除'] : ['Cancel', 'Delete permanently'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      };
+      const confirmation = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+      if (confirmation.response !== 1) {
+        return { successCount: 0, errors: [], deletedPaths: [], fallbackTrashPaths: [], originalBytesRemoved: 0, cacheBytesRemoved: 0, cancelled: true };
       }
     }
-    return { successCount, errors, deletedPaths, fallbackTrashPaths };
+    return deletePhotoFiles(nativePaths, {
+      mode,
+      trashItem: (filePath) => shell.trashItem(filePath),
+      purgeCache: purgeDeletedPhotoCache,
+    });
   });
 
   // Returns pinned/recent folders stored in a simple JSON file
@@ -3571,7 +3530,6 @@ export function setupIpcHandlers(): void {
 
       return runExclusiveHeavyTask(
         `ocr:${allowedPath}:${requestedLangs.join('+')}`,
-        'ocr',
         120000,
         async () => {
           const tesseract = await import('tesseract.js');

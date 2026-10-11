@@ -18,7 +18,7 @@ const {
     },
     deepseek: {
       provider: 'deepseek',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-v4-pro',
       hasApiKey: true,
       supportsVision: false,
       mode: 'direct',
@@ -70,13 +70,21 @@ const {
   );
   assert.strictEqual(
     normalizeProviderModel('deepseek', 'deepseek-chat'),
-    'deepseek-v4-flash',
+    'deepseek-flash',
   );
   assert.strictEqual(
     normalizeProviderModel('deepseek', 'deepseek-reasoner'),
     'deepseek-v4-pro',
   );
 
+  for (const oldModel of ['deepseek-chat', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp']) {
+    assert.strictEqual(normalizeProviderModel('deepseek', oldModel), 'deepseek-flash');
+    assert.strictEqual(modelSupportsVision('deepseek', oldModel), true);
+    const migrated = resolveProviderRoute({ deepseek: { ...providers.deepseek, model: oldModel } }, {}, { requiresVision: true });
+    assert(migrated);
+    assert.strictEqual(migrated.config.model, 'deepseek-flash');
+  }
+  assert.strictEqual(modelSupportsVision('deepseek', 'deepseek-v4-pro'), false);
   const deepseekOnly = resolveProviderRoute(
     { deepseek: providers.deepseek },
     { defaultTextProvider: 'deepseek' },

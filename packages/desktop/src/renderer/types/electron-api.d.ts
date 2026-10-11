@@ -71,7 +71,10 @@ declare global {
         }>;
         cancelVisualHashes(): Promise<{ cancelled: boolean }>;
         moveToTrash(filePath: string): Promise<{ success: boolean; error?: string }>;
-        deleteFiles(filePaths: string[]): Promise<{
+        deleteFiles(filePaths: string[], mode?: 'trash' | 'permanent'): Promise<{
+          originalBytesRemoved?: number;
+          cacheBytesRemoved?: number;
+          cancelled?: boolean;
           successCount: number;
           errors: string[];
           deletedPaths?: string[];

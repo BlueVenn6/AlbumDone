@@ -14,6 +14,7 @@ let server: http.Server | null = null;
 let wss: WebSocketServer | null = null;
 let currentPort: number | null = null;
 let sessionToken: string | null = null;
+let startPromise: Promise<{ port: number; token: string; url: string }> | null = null;
 const connectedClients = new Set<WebSocket>();
 
 function redactSensitiveText(value: string): string {
@@ -109,7 +110,7 @@ function readTokenFromRequest(req: Request | http.IncomingMessage): string | nul
     return headerToken;
   }
 
-  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+  const url = new URL(req.url ?? '/', 'http://localhost');
   return url.searchParams.get('token');
 }
 
@@ -131,7 +132,16 @@ function requireLanAuth(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
-export async function startLanServer(): Promise<{ port: number; token: string; url: string }> {
+export function startLanServer(): Promise<{ port: number; token: string; url: string }> {
+  if (startPromise) return startPromise;
+  startPromise = startLanServerInternal().catch(async (err) => {
+    await stopLanServer();
+    throw err;
+  }).finally(() => { startPromise = null; });
+  return startPromise;
+}
+
+async function startLanServerInternal(): Promise<{ port: number; token: string; url: string }> {
   if (server) {
     const port = currentPort ?? LAN_PORT;
     const token = sessionToken ?? createSessionToken();
@@ -214,6 +224,9 @@ export async function startLanServer(): Promise<{ port: number; token: string; u
 
   // WebSocket for real-time sync
   wss = new WebSocketServer({ server });
+  // ws forwards HTTP listener errors. The HTTP handler below still rejects
+  // startup; this listener prevents a second, unhandled EventEmitter error.
+  wss.on('error', (err) => logger.error('lan', 'WebSocket server error', err));
 
   wss.on('connection', (ws, req) => {
     if (!isValidToken(readTokenFromRequest(req))) {
@@ -252,31 +265,28 @@ export async function startLanServer(): Promise<{ port: number; token: string; u
   });
 
   return new Promise((resolve, reject) => {
-    server!.listen(LAN_PORT, '0.0.0.0', () => {
-      currentPort = LAN_PORT;
-      const ip = getLocalIp();
-      logger.info('lan', 'LAN server started', getLanLogContext(LAN_PORT));
-      resolve({ port: LAN_PORT, token: sessionToken!, url: `http://${ip}:${LAN_PORT}?token=${encodeURIComponent(sessionToken!)}` });
-    });
-
-    server!.on('error', (err: NodeJS.ErrnoException) => {
-      if (err.code === 'EADDRINUSE') {
-        // Try next port
-        const nextPort = LAN_PORT + 1;
-        server!.listen(nextPort, '0.0.0.0', () => {
-          currentPort = nextPort;
-          logger.info('lan', 'LAN server started on fallback port', getLanLogContext(nextPort));
-          resolve({
-            port: nextPort,
-            token: sessionToken!,
-            url: `http://${getLocalIp()}:${nextPort}?token=${encodeURIComponent(sessionToken!)}`,
-          });
-        });
+    const activeServer = server!;
+    let attemptedPort = LAN_PORT;
+    const onError = (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE' && attemptedPort === LAN_PORT && LAN_PORT < 65535) {
+        attemptedPort = LAN_PORT + 1;
+        activeServer.listen(attemptedPort, '0.0.0.0');
       } else {
+        activeServer.removeListener('listening', onListening);
+        activeServer.removeListener('error', onError);
         logger.error('lan', 'LAN server failed to start', err);
         reject(err);
       }
-    });
+    };
+    const onListening = () => {
+      activeServer.removeListener('error', onError);
+      currentPort = attemptedPort;
+      logger.info('lan', 'LAN server started', getLanLogContext(attemptedPort));
+      resolve({ port: attemptedPort, token: sessionToken!, url: getLanServerUrl()! });
+    };
+    activeServer.on('error', onError);
+    activeServer.once('listening', onListening);
+    activeServer.listen(attemptedPort, '0.0.0.0');
   });
 }
 

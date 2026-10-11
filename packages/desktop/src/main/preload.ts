@@ -120,8 +120,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       invoke('fs:cancelVisualHashes'),
     moveToTrash: (filePath: string) =>
       invoke('fs:moveToTrash', filePath),
-    deleteFiles: (filePaths: string[]) =>
-      invoke('fs:deleteFiles', filePaths),
+    deleteFiles: (filePaths: string[], mode: 'trash' | 'permanent' = 'trash') =>
+      invoke('fs:deleteFiles', filePaths, mode),
   },
 
   // Settings / credential store

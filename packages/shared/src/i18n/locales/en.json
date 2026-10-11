@@ -1,5 +1,7 @@
 {
   "common": {
+    "permanentDelete": "Delete permanently and release storage",
+    "deletedStorage": "Permanently removed {{originalMB}} MB of originals and {{cacheMB}} MB of app caches.",
     "back": "Back",
     "cancel": "Cancel",
     "done": "Done",

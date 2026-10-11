@@ -18,5 +18,6 @@ export default defineConfig({
   },
   server: {
     port: APP_PORTS.desktopRenderer,
+    strictPort: true,
   },
 });

@@ -25,7 +25,7 @@ export const COMPAT_PROVIDER_C = ['deep', 'seek'].join('') as 'deepseek';
 export const COMPAT_MODEL_C_PREFIX = ['deep', 'seek'].join('');
 const LEGACY_MODEL_C_CHAT = `${COMPAT_MODEL_C_PREFIX}-chat`;
 const LEGACY_MODEL_C_REASONER = `${COMPAT_MODEL_C_PREFIX}-reasoner`;
-const CURRENT_MODEL_C_FLASH = `${COMPAT_MODEL_C_PREFIX}-v4-flash`;
+const CURRENT_MODEL_C_FLASH = `${COMPAT_MODEL_C_PREFIX}-flash`;
 const CURRENT_MODEL_C_PRO = `${COMPAT_MODEL_C_PREFIX}-v4-pro`;
 
 export type ProviderMode = 'direct' | 'proxy';
@@ -123,7 +123,7 @@ export const PROVIDER_MODELS = {
   [COMPAT_PROVIDER_C]: {
     name: ['Deep', 'Seek'].join(''),
     models: [CURRENT_MODEL_C_FLASH, CURRENT_MODEL_C_PRO],
-    supportsVision: false,
+    supportsVision: true,
   },
   custom: {
     name: 'Custom Endpoint',
@@ -138,7 +138,7 @@ export function normalizeProviderModel(provider: LLMProvider, model: string): st
     return 'MiniMax-M3';
   }
   if (provider === COMPAT_PROVIDER_C) {
-    if (trimmedModel === LEGACY_MODEL_C_CHAT) {
+    if ([LEGACY_MODEL_C_CHAT, `${COMPAT_MODEL_C_PREFIX}-v4-flash`, `${COMPAT_MODEL_C_PREFIX}-v4-flash-vision-exp`].includes(trimmedModel)) {
       return CURRENT_MODEL_C_FLASH;
     }
     if (trimmedModel === LEGACY_MODEL_C_REASONER) {
@@ -165,7 +165,7 @@ const VISION_MODELS: Partial<Record<LLMProvider, readonly string[]>> = {
   [COMPAT_PROVIDER_B]: PROVIDER_MODELS[COMPAT_PROVIDER_B].models,
   qwen: PROVIDER_MODELS.qwen.models,
   minimax: PROVIDER_MODELS.minimax.models,
-  [COMPAT_PROVIDER_C]: [],
+  [COMPAT_PROVIDER_C]: [CURRENT_MODEL_C_FLASH],
 };
 
 const NON_VISION_MODEL_PATTERN = /(reasoner|embedding|rerank|audio|tts|whisper)/i;
@@ -188,6 +188,9 @@ export function modelSupportsVision(
   model: string,
   baseUrl?: string,
 ): boolean {
+  if (provider === COMPAT_PROVIDER_C) {
+    return normalizeProviderModel(provider, model) === CURRENT_MODEL_C_FLASH;
+  }
   if (provider === 'custom') {
     const normalizedModel = model.toLowerCase();
     if (NON_VISION_MODEL_PATTERN.test(normalizedModel)) {
@@ -324,7 +327,7 @@ export function resolveProviderRoute(
 
   return {
     provider: fallbackProvider,
-    config,
+    config: { ...config, model: normalizeProviderModel(fallbackProvider, config.model) },
     source: 'firstConfigured',
   };
 }

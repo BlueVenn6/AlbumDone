@@ -305,11 +305,6 @@ function compareMonthlyPhotos(a: MonthlyPhoto, b: MonthlyPhoto): number {
   return b.photoDate.getTime() - a.photoDate.getTime();
 }
 
-function pickRepresentativePhoto(monthPhotos: MonthlyPhoto[]): MonthlyPhoto | null {
-  const rankedPhotos = [...monthPhotos].sort(compareMonthlyPhotos);
-  return rankedPhotos[0] ?? null;
-}
-
 function readFileHead(filePath: string, maxBytes: number): Buffer {
   const fd = fs.openSync(filePath, 'r');
   try {

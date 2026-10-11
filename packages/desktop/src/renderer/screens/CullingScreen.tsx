@@ -210,7 +210,7 @@ export function CullingScreen(): React.JSX.Element {
     await updateAlbumCountAfterLocalDelete(albumId, snapshot.count);
   }, [albumId, loadPhotos]);
 
-  const deleteWithCheckpoint = useCallback(async (photosToDelete: Photo[]) => {
+  const deleteWithCheckpoint = useCallback(async (photosToDelete: Photo[], permanent = false) => {
     let checkpoint = checkpointRef.current;
     if (!checkpoint) {
       const snapshot = createAlbumSnapshot(albumId, usePhotoStore.getState().photos);
@@ -230,6 +230,7 @@ export function CullingScreen(): React.JSX.Element {
     const remainingIds = new Set(getRemainingPhotoTaskDeletionIds(checkpoint));
     const pendingPhotos = photosToDelete.filter((photo) => remainingIds.has(photo.id));
     const result = await deletePhotosFromDisk(pendingPhotos, {
+      mode: permanent ? 'permanent' : 'trash',
       onBatch: async ({ deletedIds, failedIds }) => {
         if (!checkpointRef.current) return;
         checkpointRef.current = recordPhotoTaskDeletionResult(checkpointRef.current, {
@@ -288,15 +289,15 @@ export function CullingScreen(): React.JSX.Element {
     undoLast();
   }, [history, queueCheckpointSave, undoLast]);
 
-  const handleApplyDeletions = async () => {
+  const handleApplyDeletions = async (permanent = false) => {
     if (selectedForDeletion.size === 0) return;
-    if (!window.confirm(t('culling.confirmTrashDetailed', { count: selectedForDeletion.size }))) return;
+    if (!permanent && !window.confirm(t('culling.confirmTrashDetailed', { count: selectedForDeletion.size }))) return;
 
     setTrashing(true);
     const toDelete = items.filter(i => selectedForDeletion.has(i.photo.id));
 
     try {
-      const result = await deleteWithCheckpoint(toDelete.map((item) => item.photo));
+      const result = await deleteWithCheckpoint(toDelete.map((item) => item.photo), permanent);
       if (result.errors.length > 0) {
         window.alert(result.errors.join('\n'));
       }
@@ -445,12 +446,14 @@ export function CullingScreen(): React.JSX.Element {
     const kept = allItems.filter((i) => i.decision === 'keep').length;
     const toDelete = allItems.filter((i) => i.decision === 'delete');
 
-    const handleConfirmDelete = async () => {
-      if (!window.confirm(t('culling.confirmTrashDetailed', { count: toDelete.length }))) {
+    const handleConfirmDelete = async (permanent = false) => {
+      if (!permanent && !window.confirm(t('culling.confirmTrashDetailed', { count: toDelete.length }))) {
         return;
       }
+      if (trashing) return;
       setTrashing(true);
-      const result = await deleteWithCheckpoint(toDelete.map((item) => item.photo));
+      try {
+      const result = await deleteWithCheckpoint(toDelete.map((item) => item.photo), permanent);
       if (result.errors.length > 0) {
         console.error('[culling] delete errors:', result.errors);
         window.alert(result.errors.join('\n'));
@@ -462,8 +465,15 @@ export function CullingScreen(): React.JSX.Element {
       }
       removePhotosById(Array.from(result.deletedIds));
       updateCachedAlbumPhotosAfterDelete(albumId, result.deletedIds);
-      setTrashing(false);
-      setTrashDone(true);
+      setTrashDone(!checkpointRef.current && !result.cancelled && result.errors.length === 0);
+      if (permanent && result.deletedIds.size > 0) {
+        window.alert(t('common.deletedStorage', { originalMB: (result.originalBytesRemoved / 1024 ** 2).toFixed(2), cacheMB: (result.cacheBytesRemoved / 1024 ** 2).toFixed(2) }));
+      }
+      } catch (err) {
+        window.alert(err instanceof Error ? err.message : t('culling.deleteFailed'));
+      } finally {
+        setTrashing(false);
+      }
     };
 
     const handleBackToHome = () => {
@@ -481,11 +491,16 @@ export function CullingScreen(): React.JSX.Element {
           </div>
           {!trashDone && toDelete.length > 0 && (
             <button
-              onClick={handleConfirmDelete}
+              onClick={() => handleConfirmDelete()}
               disabled={trashing}
               style={{ ...styles.primaryBtn, background: trashing ? colors.border : colors.danger }}
             >
               {trashing ? t('common.deleting') : t('culling.confirmTrash', { count: toDelete.length })}
+            </button>
+          )}
+          {!trashDone && toDelete.length > 0 && (
+            <button onClick={() => handleConfirmDelete(true)} disabled={trashing} style={styles.secondaryBtn}>
+              {t('common.permanentDelete')}
             </button>
           )}
           {trashDone && (
@@ -697,7 +712,7 @@ function GridCulling({
   items: CullingItem[];
   selectedIds: Set<string>;
   onToggleSelection: (id: string) => void;
-  onApplyDeletions: () => void;
+  onApplyDeletions: (permanent?: boolean) => void;
   isTrashing: boolean;
   onUndo: () => void;
   onSwitchView: () => void;
@@ -893,7 +908,7 @@ function GridCulling({
 
       <div style={styles.stickyFooter}>
         <button
-          onClick={onApplyDeletions}
+          onClick={() => onApplyDeletions()}
           disabled={selectedCount === 0 || isTrashing}
           style={{
             ...styles.primaryBtn,
@@ -911,6 +926,9 @@ function GridCulling({
             : selectedCount > 0
               ? t('culling.confirmSelectedDelete', { count: selectedCount })
               : t('culling.selectPhotosToDelete')}
+        </button>
+        <button onClick={() => onApplyDeletions(true)} disabled={selectedCount === 0 || isTrashing} style={styles.secondaryBtn}>
+          {t('common.permanentDelete')}
         </button>
       </div>
     </div>

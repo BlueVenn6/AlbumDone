@@ -439,7 +439,9 @@ export function DeduplicationScreen(): React.JSX.Element {
     duplicateGroups.reduce((sum, group) => sum + getRejectedPhotoIds(group).length, 0),
   );
 
-  const handleConfirm = useCallback(async () => {
+  const handleConfirm = useCallback(async (permanent = false) => {
+    if (phase === 'confirming') return;
+    try {
     setPhase('confirming');
     setDeleteFailure(null);
     const deleteIds = new Set<string>();
@@ -465,6 +467,7 @@ export function DeduplicationScreen(): React.JSX.Element {
     const remainingIds = new Set(getRemainingPhotoTaskDeletionIds(checkpoint));
     const pendingPhotos = photosToDelete.filter((photo) => remainingIds.has(photo.id));
     const result = await deletePhotosFromDisk(pendingPhotos, {
+      mode: permanent ? 'permanent' : 'trash',
       onBatch: async ({ deletedIds, failedIds }) => {
         if (!checkpointRef.current) return;
         checkpointRef.current = recordPhotoTaskDeletionResult(checkpointRef.current, {
@@ -500,12 +503,19 @@ export function DeduplicationScreen(): React.JSX.Element {
       checkpointRef.current = null;
     }
 
-    if (result.errors.length === 0) {
+    if (result.errors.length === 0 && !result.cancelled) {
       usePhotoStore.setState({ duplicateGroups: [] });
     }
     setDeletedCount(result.deletedIds.size);
-    setPhase(result.errors.length > 0 ? 'results' : 'done');
-  }, [albumId, duplicateGroups, removePhotosById]);
+    setPhase(result.errors.length > 0 || result.cancelled ? 'results' : 'done');
+    if (permanent && result.deletedIds.size > 0) {
+      window.alert(t('common.deletedStorage', { originalMB: (result.originalBytesRemoved / 1024 ** 2).toFixed(2), cacheMB: (result.cacheBytesRemoved / 1024 ** 2).toFixed(2) }));
+    }
+    } catch (err) {
+      setDeleteFailure({ deleted: 0, errors: [err instanceof Error ? err.message : String(err)] });
+      setPhase('results');
+    }
+  }, [albumId, duplicateGroups, removePhotosById, phase, t]);
 
   const toggleGroup = useCallback((id: string) => {
     setExpandedGroups((prev) => {
@@ -668,7 +678,7 @@ export function DeduplicationScreen(): React.JSX.Element {
           </span>
         </div>
         <button
-          onClick={handleConfirm}
+          onClick={() => handleConfirm()}
           disabled={totalToDelete === 0 || phase === 'confirming'}
           style={{
             ...styles.primaryBtn,
@@ -676,6 +686,9 @@ export function DeduplicationScreen(): React.JSX.Element {
           }}
         >
           {t('dedup.confirmDelete', { count: totalToDelete })}
+        </button>
+        <button onClick={() => handleConfirm(true)} disabled={totalToDelete === 0 || phase === 'confirming'} style={styles.cancelBtn}>
+          {t('common.permanentDelete')}
         </button>
       </div>
 
@@ -755,8 +768,45 @@ function DedupeGroupCard({
 
       {expanded && (
         <div style={styles.groupBody}>
-          <div style={styles.photoGrid}>
-            {group.photos.map((photo) => {
+          <DedupePhotoGrid group={group} rejectedPhotoIds={rejectedPhotoIds} onToggleSelection={onToggleSelection} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DedupePhotoGrid({ group, rejectedPhotoIds, onToggleSelection }: {
+  group: DuplicateGroup;
+  rejectedPhotoIds: Set<string>;
+  onToggleSelection: (photoId: string) => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ width: 800, top: 0 });
+  const virtualized = group.photos.length > 24;
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => setViewport((previous) => ({ ...previous, width: element.clientWidth })));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const gap = 16;
+  const columns = Math.max(1, Math.floor((viewport.width + gap) / (180 + gap)));
+  const cardWidth = Math.max(1, (viewport.width - (columns - 1) * gap) / columns);
+  const rowHeight = Math.ceil(cardWidth * 0.75) + 52 + gap;
+  const totalHeight = Math.ceil(group.photos.length / columns) * rowHeight;
+  const height = Math.min(500, totalHeight);
+  const startIndex = virtualized ? Math.max(0, Math.floor(viewport.top / rowHeight) - 2) * columns : 0;
+  const endIndex = virtualized ? Math.min(group.photos.length, (Math.ceil((viewport.top + height) / rowHeight) + 2) * columns) : group.photos.length;
+  const visiblePhotos = group.photos.slice(startIndex, endIndex);
+  return (
+    <div ref={viewportRef} onScroll={(event) => {
+      const top = event.currentTarget.scrollTop;
+      setViewport((previous) => ({ ...previous, top }));
+    }} style={virtualized ? { height, overflowY: 'auto' } : undefined}>
+      <div style={virtualized ? { position: 'relative', height: totalHeight } : styles.photoGrid}>
+            {visiblePhotos.map((photo, offset) => {
               const isRejected = rejectedPhotoIds.has(photo.id);
               const isKept = !isRejected;
               return (
@@ -765,6 +815,13 @@ function DedupeGroupCard({
                   onClick={() => onToggleSelection(photo.id)}
                   style={{
                     ...styles.photoCard,
+                    ...(virtualized ? {
+                      position: 'absolute',
+                      top: Math.floor((startIndex + offset) / columns) * rowHeight,
+                      left: ((startIndex + offset) % columns) * (cardWidth + gap),
+                      width: cardWidth,
+                      height: rowHeight - gap,
+                    } : {}),
                     borderColor: isKept ? colors.success : colors.danger,
                   }}
                 >
@@ -786,9 +843,8 @@ function DedupeGroupCard({
                 </div>
               );
             })}
-          </div>
-        </div>
-      )}
+
+      </div>
     </div>
   );
 }
@@ -796,7 +852,7 @@ function DedupeGroupCard({
 function DedupeThumbnail({ photo, dimmed }: { photo: Photo; dimmed: boolean }): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const [shouldLoad, setShouldLoad] = useState(false);
-  const { src } = usePhotoThumbnail(localFileUriToPath(photo.uri), shouldLoad, photo.thumbnailUri);
+  const { src, onLoadError } = usePhotoThumbnail(localFileUriToPath(photo.uri), shouldLoad, photo.thumbnailUri);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -826,6 +882,7 @@ function DedupeThumbnail({ photo, dimmed }: { photo: Photo; dimmed: boolean }): 
         <img
           src={src}
           alt={photo.filename}
+          onError={onLoadError}
           loading="lazy"
           decoding="async"
           style={{

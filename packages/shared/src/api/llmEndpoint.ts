@@ -31,6 +31,7 @@ export type LLMErrorCategory =
   | 'timeout'
   | 'network'
   | 'empty_response'
+  | 'invalid_response'
   | 'unknown';
 
 export type ClassifiedLLMError = {

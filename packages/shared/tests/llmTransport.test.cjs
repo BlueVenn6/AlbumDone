@@ -78,11 +78,11 @@ function response(status, body) {
   });
   const deepseekTest = await deepseekClient.testConnection();
   assert.strictEqual(deepseekTest.success, true);
-  assert.strictEqual(deepseekTest.mode, 'text');
+  assert.strictEqual(deepseekTest.mode, 'vision');
   assert.strictEqual(deepseekCalls[0].url, 'https://api.deepseek.com/v1/chat/completions');
   const deepseekBody = JSON.parse(deepseekCalls[0].init.body);
-  assert.strictEqual(deepseekBody.model, 'deepseek-v4-flash');
-  assert(!JSON.stringify(deepseekBody.messages).includes('image_url'));
+  assert.strictEqual(deepseekBody.model, 'deepseek-flash');
+  assert(JSON.stringify(deepseekBody.messages).includes('image_url'));
 
   const customDirectCalls = [];
   const customDirectClient = new LLMClient({

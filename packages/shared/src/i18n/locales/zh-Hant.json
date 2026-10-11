@@ -1,5 +1,7 @@
 {
   "common": {
+    "permanentDelete": "永久刪除並釋放空間",
+    "deletedStorage": "已永久刪除原檔案 {{originalMB}} MB，清理快取 {{cacheMB}} MB。",
     "back": "返回",
     "cancel": "取消",
     "done": "完成",

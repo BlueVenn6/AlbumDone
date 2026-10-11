@@ -19,6 +19,10 @@ function getHeader(init, name) {
   return headers[name] || headers[name.toLowerCase()];
 }
 
+function isConnectionProbe(init) {
+  return typeof init.body === 'string' && init.body.includes('Reply with just');
+}
+
 function assertOpenAICompatibleImageRequest(call, expected) {
   assert.strictEqual(call.url, expected.url);
   assert.strictEqual(getHeader(call.init, 'Authorization'), `Bearer ${expected.apiKey}`);
@@ -84,9 +88,10 @@ function assertOpenAIResponsesImageRequest(call, expected) {
 
     global.fetch = async (url, init = {}) => {
       calls.push({ url: String(url), init });
+      const content = isConnectionProbe(init) ? 'ok' : 'vision ok';
       if (String(url).endsWith('/responses')) {
         return jsonResponse({
-          output_text: 'vision ok',
+          output_text: content,
           usage: {
             input_tokens: 11,
             output_tokens: 3,
@@ -97,7 +102,7 @@ function assertOpenAIResponsesImageRequest(call, expected) {
         choices: [
           {
             message: {
-              content: 'vision ok',
+              content,
             },
           },
         ],
@@ -322,7 +327,7 @@ function assertOpenAIResponsesImageRequest(call, expected) {
       if (String(url).endsWith('/chat/completions')) {
         return jsonResponse({ error: { message: 'unsupported request shape' } }, 400);
       }
-      return jsonResponse({ content: [{ type: 'text', text: 'native anthropic ok' }] });
+      return jsonResponse({ content: [{ type: 'text', text: 'ok' }] });
     };
     const negotiatedAnthropicClient = new LLMClient({
       provider: 'anthropic',
@@ -375,7 +380,7 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     global.fetch = async (url, init = {}) => {
       calls.push({ url: String(url), init });
       return jsonResponse({
-        choices: [{ message: { content: '', reasoning_content: 'glm test ok' } }],
+        choices: [{ message: { content: '', reasoning_content: 'ok' } }],
       });
     };
     const glmReasoningClient = new LLMClient({
@@ -414,12 +419,13 @@ function assertOpenAIResponsesImageRequest(call, expected) {
       mode: 'direct',
     });
     const deepSeekConnection = await deepSeekClient.testConnection();
-    assert.deepStrictEqual(deepSeekConnection, { success: true, mode: 'text' });
+    assert.deepStrictEqual(deepSeekConnection, { success: true, mode: 'vision' });
     assert.strictEqual(calls.length, 1);
     assert.strictEqual(calls[0].url, 'https://api.deepseek.com/v1/chat/completions');
     const deepSeekBody = parseJsonBody(calls[0].init);
-    assert.strictEqual(deepSeekBody.model, 'deepseek-v4-flash');
-    assert.strictEqual(typeof deepSeekBody.messages[0].content, 'string');
+    assert.strictEqual(deepSeekBody.model, 'deepseek-flash');
+    assert(Array.isArray(deepSeekBody.messages[0].content));
+    assert(deepSeekBody.messages[0].content.some((part) => part.type === 'image_url'));
 
     const staleProxyClient = new LLMClient({
       provider: 'moonshot',
@@ -441,8 +447,9 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     calls.length = 0;
     global.fetch = async (url, init = {}) => {
       calls.push({ url: String(url), init });
+      const content = isConnectionProbe(init) ? 'ok' : 'anthropic vision ok';
       return jsonResponse({
-        content: [{ type: 'text', text: 'anthropic vision ok' }],
+        content: [{ type: 'text', text: content }],
         usage: { input_tokens: 9, output_tokens: 4 },
       });
     };
@@ -493,11 +500,12 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     calls.length = 0;
     global.fetch = async (url, init = {}) => {
       calls.push({ url: String(url), init });
+      const content = isConnectionProbe(init) ? 'ok' : 'google vision ok';
       return jsonResponse({
         candidates: [
           {
             content: {
-              parts: [{ text: 'google vision ok' }],
+              parts: [{ text: content }],
             },
           },
         ],
