@@ -63,6 +63,9 @@ export const PROVIDER_MODELS = {
   anthropic: {
     name: 'Anthropic',
     models: [
+      'claude-sonnet-5-5',
+      'claude-opus-5-5',
+      'claude-haiku-5-5',
       'claude-sonnet-5',
       'claude-opus-4-8',
       'claude-opus-4-7',
@@ -103,6 +106,7 @@ export const PROVIDER_MODELS = {
   qwen: {
     name: 'Alibaba (Qwen)',
     models: [
+      'qwen3.8-max',
       'qwen3.7-plus',
       'qwen3.6-flash',
       'qwen3.5-plus',
@@ -134,6 +138,22 @@ export const PROVIDER_MODELS = {
 
 export function normalizeProviderModel(provider: LLMProvider, model: string): string {
   const trimmedModel = model.trim();
+  if (provider === 'anthropic') {
+    const retiredModels: Record<string, string> = {
+      'claude-3-5-sonnet-20240620': 'claude-sonnet-5-5',
+      'claude-3-5-sonnet-20241022': 'claude-sonnet-5-5',
+      'claude-3-5-sonnet-latest': 'claude-sonnet-5-5',
+      'claude-3-7-sonnet-20250219': 'claude-sonnet-5-5',
+      'claude-3-7-sonnet-latest': 'claude-sonnet-5-5',
+      'claude-sonnet-4-20250514': 'claude-sonnet-5-5',
+      'claude-opus-4-20250514': 'claude-opus-4-8',
+      'claude-opus-4-1-20250805': 'claude-opus-4-8',
+      'claude-3-5-haiku-20241022': 'claude-haiku-4-5-20251001',
+      'claude-3-5-haiku-latest': 'claude-haiku-4-5-20251001',
+      'claude-3-haiku-20240307': 'claude-haiku-4-5-20251001',
+    };
+    return retiredModels[trimmedModel] ?? trimmedModel;
+  }
   if (provider === 'minimax' && trimmedModel === 'MiniMax-VL-01') {
     return 'MiniMax-M3';
   }

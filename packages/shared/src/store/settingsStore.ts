@@ -207,45 +207,27 @@ export const useSettingsStore = create<SettingsState>()(
       name: 'photo-manager-settings',
       version: 1,
       migrate: (persistedState) => migratePersistedSettings(persistedState),
-      onRehydrateStorage: () => (rehydratedState, error) => {
-        if (error || !rehydratedState) return;
-        const nextProviders: Partial<Record<LLMProvider, ProviderConfig>> = {};
-
-        for (const [key, rawConfig] of Object.entries(rehydratedState.providers)) {
-          const provider = key as LLMProvider;
-          const config = rawConfig;
-          if (!config) continue;
-
-          nextProviders[provider] = sanitizeProviderConfigForPersistence(provider, config);
+      merge: (persistedState, currentState) => {
+        const state = { ...currentState, ...migratePersistedSettings(persistedState) };
+        state.language = DEFAULT_SETTINGS.language;
+        delete state.deeplApiKey;
+        if (
+          state.defaultVisionProvider &&
+          (
+            !state.providers[state.defaultVisionProvider]
+            || !configSupportsVision(state.providers[state.defaultVisionProvider])
+          )
+        ) {
+          state.defaultVisionProvider = null;
         }
-
-        useSettingsStore.setState((state) => {
-          state.providers = nextProviders;
-          state.language = DEFAULT_SETTINGS.language;
-          if (state.deeplApiKey) {
-            delete state.deeplApiKey;
-          }
-          if (
-            state.defaultVisionProvider &&
-            (
-              !state.providers[state.defaultVisionProvider]
-              || !configSupportsVision(state.providers[state.defaultVisionProvider])
-            )
-          ) {
-            state.defaultVisionProvider = null;
-          }
-          if (
-            state.defaultTextProvider &&
-            !state.providers[state.defaultTextProvider]
-          ) {
-            state.defaultTextProvider = null;
-          }
-
-          state.defaultVisionProvider ??= Object.entries(state.providers).find(
-            ([, config]) => configSupportsVision(config),
-          )?.[0] as LLMProvider | undefined ?? null;
-          state.defaultTextProvider ??= Object.keys(state.providers)[0] as LLMProvider | undefined ?? null;
-        });
+        if (state.defaultTextProvider && !state.providers[state.defaultTextProvider]) {
+          state.defaultTextProvider = null;
+        }
+        state.defaultVisionProvider ??= Object.entries(state.providers).find(
+          ([, config]) => configSupportsVision(config),
+        )?.[0] as LLMProvider | undefined ?? null;
+        state.defaultTextProvider ??= Object.keys(state.providers)[0] as LLMProvider | undefined ?? null;
+        return state;
       },
       partialize: (state) => ({
         providers: Object.fromEntries(
