@@ -117,6 +117,8 @@
     }
   },
   "yearInReview": {
+    "preview": "年度回看图片一览",
+    "previewFailed": "图片预览加载失败，请重试或打开已保存的图片。",
     "momentTitle": "{{month}} 代表照片",
     "reasonsSeparator": "，"
   },

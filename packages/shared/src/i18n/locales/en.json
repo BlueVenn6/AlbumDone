@@ -117,6 +117,8 @@
     }
   },
   "yearInReview": {
+    "preview": "Year in Review photo collage",
+    "previewFailed": "The photo preview could not be loaded. Retry or open the saved image.",
     "momentTitle": "{{month}} representative photo",
     "reasonsSeparator": ", "
   },

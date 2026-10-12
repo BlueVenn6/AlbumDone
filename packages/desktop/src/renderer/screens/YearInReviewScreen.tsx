@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { Photo, YearInReviewResult } from '@photo-manager/shared';
 import { colors, typography, spacing, radius } from '../theme';
-import { getRandomEncouragement, normalizeLocale, usePhotoStore, useTranslation } from '@photo-manager/shared';
+import { getRandomEncouragement, normalizeLocale, pathToLocalFileUri, usePhotoStore, useTranslation } from '@photo-manager/shared';
 import { getCachedAlbumPhotos, setCachedAlbumPhotos } from '../utils/photoSessionCache';
 
 type RouteState = {
@@ -180,6 +180,10 @@ export function YearInReviewScreen(): React.JSX.Element {
             {result.mode === 'scene' && encouragement && (
               <div style={styles.encouragementText}>{encouragement}</div>
             )}
+            <ReviewImage key={result.outputPath} outputPath={result.outputPath} />
+            <button style={styles.openFileButton} onClick={handleOpenFile}>
+              {t('yearInReviewOpenFile')}
+            </button>
             <div style={styles.resultPath}>{result.outputPath}</div>
             {result.moments && result.moments.length > 0 && (
               <div style={styles.momentList}>
@@ -200,12 +204,42 @@ export function YearInReviewScreen(): React.JSX.Element {
                 {t('yearInReview.emptyMonths', { months: result.emptyMonths.join(t('yearInReview.reasonsSeparator')) })}
               </div>
             )}
-            <button style={styles.openFileButton} onClick={handleOpenFile}>
-              {t('yearInReviewOpenFile')}
-            </button>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function ReviewImage({ outputPath }: { outputPath: string }): React.JSX.Element {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const [attempt, setAttempt] = useState(0);
+
+  return (
+    <div style={styles.preview}>
+      {status === 'loading' && <div role="status">{t('common.loading')}</div>}
+      {status !== 'failed' ? (
+        <img
+          key={attempt}
+          data-testid="year-review-preview"
+          src={pathToLocalFileUri(outputPath)}
+          alt={t('yearInReview.preview')}
+          style={styles.previewImage}
+          onLoad={() => setStatus('loaded')}
+          onError={() => setStatus('failed')}
+        />
+      ) : (
+        <div role="alert" style={styles.previewError}>
+          <span>{t('yearInReview.previewFailed')}</span>
+          <button style={styles.openFileButton} onClick={() => {
+            setStatus('loading');
+            setAttempt((value) => value + 1);
+          }}>
+            {t('common.retry')}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -352,6 +386,28 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.sizes.sm,
     fontFamily: typography.fontFamily,
     wordBreak: 'break-all',
+  },
+  preview: {
+    width: '100%',
+    minHeight: '160px',
+    borderRadius: radius.md,
+    background: colors.surfaceElevated,
+    overflow: 'hidden',
+    color: colors.textSecondary,
+  },
+  previewImage: {
+    display: 'block',
+    width: '100%',
+    height: 'auto',
+    maxHeight: 'min(70vh, 720px)',
+    objectFit: 'contain',
+  },
+  previewError: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.lg,
   },
   momentList: {
     display: 'flex',

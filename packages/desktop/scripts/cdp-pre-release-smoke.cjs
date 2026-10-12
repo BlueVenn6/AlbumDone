@@ -3,8 +3,17 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const WebSocket = require('ws');
+const http = require('node:http');
 
 let activeSocket = null;
+let completed = false;
+
+process.on('beforeExit', (code) => {
+  if (code === 0 && !completed) {
+    process.stderr.write('UI acceptance ended without completing its assertions.\n');
+    process.exitCode = 1;
+  }
+});
 
 const debugPort = Number(process.argv[2] || 9222);
 const albumPath = process.argv[3];
@@ -16,8 +25,19 @@ if (!albumPath || !evidenceDir) {
 }
 
 async function getPageTarget() {
-  const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
-  const targets = await response.json();
+  const targets = await new Promise((resolve, reject) => {
+    const request = http.get(`http://127.0.0.1:${debugPort}/json/list`, (response) => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => { body += chunk; });
+      response.on('end', () => {
+        try { resolve(JSON.parse(body)); } catch (error) { reject(error); }
+      });
+      response.on('error', reject);
+    });
+    request.setTimeout(15000, () => request.destroy(new Error('CDP target discovery timed out.')));
+    request.on('error', reject);
+  });
   const page = targets.find((target) => target.type === 'page' && target.title === 'AlbumDone');
   if (!page?.webSocketDebuggerUrl) {
     throw new Error('AlbumDone CDP page target was not found.');
@@ -32,7 +52,8 @@ async function main() {
   };
   reportStage('connecting to Electron');
   const target = await getPageTarget();
-  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  reportStage('renderer target found');
+  const socket = new WebSocket(target.webSocketDebuggerUrl, { handshakeTimeout: 15000 });
   activeSocket = socket;
   let commandId = 0;
   const pending = new Map();
@@ -43,18 +64,38 @@ async function main() {
     const waiter = pending.get(message.id);
     if (!waiter) return;
     pending.delete(message.id);
+    clearTimeout(waiter.timer);
     if (message.error) waiter.reject(new Error(message.error.message));
     else waiter.resolve(message.result);
   });
+
+  const rejectPending = (error) => {
+    for (const waiter of pending.values()) {
+      clearTimeout(waiter.timer);
+      waiter.reject(error);
+    }
+    pending.clear();
+  };
+  socket.on('error', rejectPending);
+  socket.on('close', () => rejectPending(new Error('Electron closed before UI acceptance completed.')));
 
   await new Promise((resolve, reject) => {
     socket.once('open', resolve);
     socket.once('error', reject);
   });
+  reportStage('renderer connected');
 
   const send = (method, params = {}) => new Promise((resolve, reject) => {
+    if (socket.readyState !== WebSocket.OPEN) {
+      reject(new Error('Electron is disconnected.'));
+      return;
+    }
     const id = ++commandId;
-    pending.set(id, { resolve, reject });
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      reject(new Error(`CDP command timed out: ${method}`));
+    }, 30000);
+    pending.set(id, { resolve, reject, timer });
     socket.send(JSON.stringify({ id, method, params }));
   });
   const evaluate = async (expression) => {
@@ -90,7 +131,7 @@ async function main() {
     if (!screenshotCaptureAvailable) return;
     try {
       const result = await Promise.race([
-        send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }),
+        send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false, fromSurface: false }),
         new Promise((_, reject) => setTimeout(
           () => reject(new Error('CDP screenshot capture timed out.')),
           5000,
@@ -106,12 +147,15 @@ async function main() {
   };
 
   await send('Runtime.enable');
+  reportStage('runtime inspection ready');
   await send('Page.enable');
+  reportStage('page inspection ready');
   await waitFor(`document.readyState === 'complete'`);
 
   reportStage('scanning album through renderer/preload/IPC');
   const albumLiteral = JSON.stringify(path.resolve(albumPath));
   const albumTitleLiteral = JSON.stringify(path.basename(albumPath));
+  await evaluate(`window.electronAPI.saveAlbum(${albumLiteral}, 0)`);
   const navigateToAlbumFeature = async (hash, key) => {
     await evaluate(`history.replaceState({
       usr: { albumId: ${albumLiteral}, albumTitle: ${albumTitleLiteral} },
@@ -232,6 +276,35 @@ async function main() {
   assert.strictEqual(reviewMetadata.width, 1600);
   assert.strictEqual(reviewMetadata.height, 1240);
   assert(reviewStats.channels.some((channel) => channel.stdev > 8), 'Year in Review export is visually blank.');
+  await waitFor(`(() => {
+    const image = document.querySelector('[data-testid="year-review-preview"]');
+    return image?.complete && image.naturalWidth > 0;
+  })()`);
+  const displayedPreview = await evaluate(`(() => {
+    const image = document.querySelector('[data-testid="year-review-preview"]');
+    image.scrollIntoView({ block: 'center' });
+    const bounds = image.getBoundingClientRect();
+    return {
+      src: image.getAttribute('src'),
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      visibleWidth: bounds.width,
+      visibleHeight: bounds.height,
+      top: bounds.top,
+      bottom: bounds.bottom,
+      viewportHeight: innerHeight,
+    };
+  })()`);
+  assert.strictEqual(displayedPreview.width, reviewMetadata.width, 'Displayed image is not the generated collage.');
+  assert.strictEqual(displayedPreview.height, reviewMetadata.height, 'Displayed image is not the generated collage.');
+  assert(displayedPreview.src.startsWith('local-file:///'), 'Preview bypassed the local-file protocol.');
+  assert.strictEqual(
+    decodeURIComponent(displayedPreview.src.slice('local-file:///'.length)).replace(/\//g, path.sep),
+    path.resolve(reviewOutputPath),
+    'The page is showing a different or stale export.',
+  );
+  assert(displayedPreview.visibleWidth > 100 && displayedPreview.visibleHeight > 100, 'Preview is hidden or too small.');
+  assert(displayedPreview.top >= 0 && displayedPreview.bottom <= displayedPreview.viewportHeight, 'Preview does not fit the visible page.');
   await capture('06-year-review-result.png');
 
   const result = {
@@ -242,6 +315,7 @@ async function main() {
       outputPath: reviewOutputPath,
       width: reviewMetadata.width,
       height: reviewMetadata.height,
+      displayedPreview,
     },
     screenshotEvidence: {
       available: screenshotCaptureAvailable,
@@ -250,6 +324,7 @@ async function main() {
     evidenceDir: path.resolve(evidenceDir),
   };
   process.stdout.write(`${JSON.stringify(result)}\n`);
+  completed = true;
   reportStage('completed');
   socket.close();
   activeSocket = null;
