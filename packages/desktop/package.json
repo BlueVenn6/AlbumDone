@@ -70,7 +70,7 @@
     "electron": "cross-env NODE_ENV=development node scripts/start-electron.cjs",
     "typecheck": "npm run build:shared && tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
-    "test": "npm run build:main && node tests/asyncTimeout.test.cjs && node tests/thumbnailRecovery.test.cjs && node tests/photoDeletion.test.cjs && node tests/lanServer.test.cjs && node tests/yearInReviewMonthPlan.test.cjs && node tests/yearInReviewExport.test.cjs && node tests/runElectronBuilder.test.cjs",
+    "test": "npm run build:main && node tests/asyncTimeout.test.cjs && node tests/thumbnailRecovery.test.cjs && node tests/photoDeletion.test.cjs && node tests/lanServer.test.cjs && node tests/yearInReviewMonthPlan.test.cjs && node tests/yearInReviewExport.test.cjs && node tests/runElectronBuilder.test.cjs && node tests/uiAcceptanceHarness.test.cjs",
     "package": "node scripts/package-desktop.cjs",
     "package:dir": "npm run build && node scripts/run-electron-builder.cjs --dir"
   },

@@ -1,6 +1,8 @@
 const assert = require('assert');
 const path = require('path');
-const WebSocket = require('ws');
+const { connectToAlbumDone } = require('./cdp-client.cjs');
+let completed = false;
+process.on('beforeExit', (code) => { if (code === 0 && !completed) process.exitCode = 1; });
 
 const port = Number(process.argv[2] || 9223);
 const albumPath = path.resolve(process.argv[3] || '');
@@ -9,60 +11,8 @@ let activeSocket = null;
 
 async function main() {
   assert(albumPath, 'Album path is required.');
-  const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then((response) => response.json());
-  const target = targets.find((item) => item.type === 'page' && item.title === 'AlbumDone');
-  assert(target?.webSocketDebuggerUrl, 'AlbumDone renderer was not found.');
-
-  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  const { socket, send, evaluate, waitFor, click } = await connectToAlbumDone(port);
   activeSocket = socket;
-  await new Promise((resolve, reject) => {
-    socket.once('open', resolve);
-    socket.once('error', reject);
-  });
-  let id = 0;
-  const pending = new Map();
-  socket.on('message', (raw) => {
-    const message = JSON.parse(String(raw));
-    const waiter = pending.get(message.id);
-    if (!waiter) return;
-    pending.delete(message.id);
-    if (message.error) waiter.reject(new Error(message.error.message));
-    else waiter.resolve(message.result);
-  });
-  const send = (method, params = {}) => new Promise((resolve, reject) => {
-    const commandId = ++id;
-    pending.set(commandId, { resolve, reject });
-    socket.send(JSON.stringify({ id: commandId, method, params }));
-  });
-  const evaluate = async (expression) => {
-    const response = await send('Runtime.evaluate', {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-    if (response.exceptionDetails) {
-      throw new Error(response.exceptionDetails.exception?.description || 'Renderer evaluation failed.');
-    }
-    return response.result.value;
-  };
-  const waitFor = async (expression, timeoutMs = 30000) => {
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < timeoutMs) {
-      if (await evaluate(expression)) return Date.now() - startedAt;
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    throw new Error(`Timed out waiting for: ${expression}`);
-  };
-  const click = (labels, exact = false) => evaluate(`(() => {
-    const labels = ${JSON.stringify(labels.map((label) => label.toLowerCase()))};
-    const button = [...document.querySelectorAll('button')].find((item) => {
-      const text = (item.textContent || '').trim().toLowerCase();
-      return labels.some((label) => ${exact ? 'text === label' : 'text.includes(label)'});
-    });
-    if (!button) return false;
-    button.click();
-    return true;
-  })()`);
 
   await send('Runtime.enable');
   await send('Page.enable');
@@ -111,6 +61,23 @@ async function main() {
   await waitFor(`(() => { const image = document.querySelector('img:not([aria-hidden="true"])'); return image && image.complete && image.naturalWidth > 0; })()`);
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
+  if (process.argv.includes('--rapid-decisions')) {
+    const checkpointKey = `photo-task:v1:culling:${encodeURIComponent(albumPath)}`;
+    await evaluate(`(() => {
+      const buttons = [...document.querySelectorAll('button')];
+      buttons.find(button => button.textContent.trim() === '✓ Keep').click();
+      buttons.find(button => button.textContent.trim() === '✗ Delete').click();
+    })()`);
+    await waitFor(`document.body.textContent.includes('2 / 50')`);
+    const raw = await evaluate(`window.electronAPI.tasks.getCheckpoint(${JSON.stringify(checkpointKey)})`);
+    const checkpoint = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    assert.strictEqual(checkpoint.decisions[checkpoint.photoIds[0]], 'keep', 'A rapid second click overwrote the accepted decision.');
+    socket.terminate();
+    completed = true;
+    process.stdout.write(`${JSON.stringify({ rapidSecondClickIgnored: true, firstDecisionPreserved: true })}\n`);
+    return;
+  }
+
   const transitions = [];
   for (let expected = 2; expected <= 4; expected += 1) {
     const preload = await evaluate(`(() => {
@@ -133,11 +100,32 @@ async function main() {
     transitions.push({ preload, decisionMs, imageMs: Date.now() - startedAt });
   }
 
+  const fourthSource = await evaluate(`document.querySelector('img:not([aria-hidden="true"])')?.src`);
+  assert(await click(['↩'], true), 'Undo was unavailable after a decision.');
+  await waitFor(`document.body.textContent.includes('3 / 50')`);
+  assert(await click(['✗ delete', '✗ 删除', '✗ 刪除'], true));
+  await waitFor(`document.body.textContent.includes('4 / 50')`);
+  await waitFor(`document.querySelector('img:not([aria-hidden="true"])')?.src === ${JSON.stringify(fourthSource)}`);
+  const checkpointKey = `photo-task:v1:culling:${encodeURIComponent(albumPath)}`;
+  await waitFor(`(async () => {
+    const raw = await window.electronAPI.tasks.getCheckpoint(${JSON.stringify(checkpointKey)});
+    const checkpoint = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return checkpoint?.currentIndex === 3
+      && Object.values(checkpoint.decisions).filter(value => value === 'keep').length === 2
+      && Object.values(checkpoint.decisions).filter(value => value === 'delete').length === 1;
+  })()`);
+  await send('Page.reload', { ignoreCache: true });
+  await waitFor(`document.body.textContent.includes('4 / 50')`, 30000);
+  await waitFor(`document.querySelector('img:not([aria-hidden="true"])')?.src === ${JSON.stringify(fourthSource)}`);
   socket.terminate();
+  completed = true;
   process.stdout.write(`${JSON.stringify({
     scan,
     transitions,
     maxTransitionMs: Math.max(...transitions.map((transition) => transition.imageMs)),
+    undoAndDelete: true,
+    persistedDecisions: { keep: 2, delete: 1, currentIndex: 3 },
+    rendererReloadResumedSamePhoto: true,
   })}\n`);
 }
 

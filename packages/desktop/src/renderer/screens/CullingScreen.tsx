@@ -84,6 +84,13 @@ export function CullingScreen(): React.JSX.Element {
   const checkpointRef = useRef<PhotoTaskCheckpoint | null>(null);
   const checkpointSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
+  useEffect(() => () => {
+    if (overlayTimer.current !== null) {
+      clearTimeout(overlayTimer.current);
+      overlayTimer.current = null;
+    }
+  }, []);
+
   const {
     loading: photosLoading,
     error: photosError,
@@ -262,11 +269,12 @@ export function CullingScreen(): React.JSX.Element {
 
   const triggerDecision = useCallback(
     (decision: 'keep' | 'delete') => {
-      if (phase !== 'culling' || currentIndex >= items.length) return;
+      if (phase !== 'culling' || currentIndex >= items.length || overlayTimer.current !== null) return;
       const currentItem = items[currentIndex];
       if (!currentItem) return;
       setOverlay(decision);
       overlayTimer.current = setTimeout(() => {
+        overlayTimer.current = null;
         setOverlay(null);
         if (checkpointRef.current) {
           queueCheckpointSave(recordPhotoTaskDecision(
@@ -282,6 +290,12 @@ export function CullingScreen(): React.JSX.Element {
   );
 
   const handleUndo = useCallback(() => {
+    if (overlayTimer.current !== null) {
+      clearTimeout(overlayTimer.current);
+      overlayTimer.current = null;
+      setOverlay(null);
+      return;
+    }
     const previous = history[history.length - 1];
     if (checkpointRef.current && previous) {
       queueCheckpointSave(undoPhotoTaskDecision(checkpointRef.current, previous.photoId));
@@ -346,8 +360,8 @@ export function CullingScreen(): React.JSX.Element {
       onKeep: () => triggerDecision('keep'),
       onDelete: () => triggerDecision('delete'),
       onUndo: handleUndo,
-      onNext: goToNext,
-      onPrev: goToPrev,
+      onNext: () => { if (overlayTimer.current === null) goToNext(); },
+      onPrev: () => { if (overlayTimer.current === null) goToPrev(); },
       onEscape: handleExit,
     }),
     { enabled: phase === 'culling' },

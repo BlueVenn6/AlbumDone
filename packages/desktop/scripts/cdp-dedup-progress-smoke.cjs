@@ -1,6 +1,8 @@
 const assert = require('assert');
 const path = require('path');
-const WebSocket = require('ws');
+const { connectToAlbumDone } = require('./cdp-client.cjs');
+let completed = false;
+process.on('beforeExit', (code) => { if (code === 0 && !completed) process.exitCode = 1; });
 
 const port = Number(process.argv[2] || 9226);
 const albumPath = path.resolve(process.argv[3] || '');
@@ -9,60 +11,8 @@ let activeSocket = null;
 
 async function main() {
   assert(albumPath, 'Album path is required.');
-  const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then((response) => response.json());
-  const target = targets.find((item) => item.type === 'page' && item.title === 'AlbumDone');
-  assert(target?.webSocketDebuggerUrl, 'AlbumDone renderer was not found.');
-  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  const { socket, send, evaluate, waitFor, click } = await connectToAlbumDone(port);
   activeSocket = socket;
-  await new Promise((resolve, reject) => {
-    socket.once('open', resolve);
-    socket.once('error', reject);
-  });
-
-  let id = 0;
-  const pending = new Map();
-  socket.on('message', (raw) => {
-    const message = JSON.parse(String(raw));
-    const waiter = pending.get(message.id);
-    if (!waiter) return;
-    pending.delete(message.id);
-    if (message.error) waiter.reject(new Error(message.error.message));
-    else waiter.resolve(message.result);
-  });
-  const send = (method, params = {}) => new Promise((resolve, reject) => {
-    const commandId = ++id;
-    pending.set(commandId, { resolve, reject });
-    socket.send(JSON.stringify({ id: commandId, method, params }));
-  });
-  const evaluate = async (expression) => {
-    const response = await send('Runtime.evaluate', {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-    if (response.exceptionDetails) {
-      throw new Error(response.exceptionDetails.exception?.description || 'Renderer evaluation failed.');
-    }
-    return response.result.value;
-  };
-  const waitFor = async (expression, timeoutMs) => {
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < timeoutMs) {
-      if (await evaluate(expression)) return Date.now() - startedAt;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    throw new Error(`Timed out waiting for: ${expression}`);
-  };
-  const click = (labels) => evaluate(`(() => {
-    const labels = ${JSON.stringify(labels.map((label) => label.toLowerCase()))};
-    const button = [...document.querySelectorAll('button')].find((item) => {
-      const text = (item.textContent || '').trim().toLowerCase();
-      return labels.some((label) => text === label || text.includes(label));
-    });
-    if (!button) return false;
-    button.click();
-    return true;
-  })()`);
 
   await send('Runtime.enable');
   await send('Page.enable');
@@ -75,6 +25,7 @@ async function main() {
     );
     socket.terminate();
     activeSocket = null;
+    completed = true;
     process.stdout.write(`${JSON.stringify({ cancelled: true })}\n`);
     return;
   }
@@ -96,6 +47,19 @@ async function main() {
   await waitFor(`[...document.querySelectorAll('button')].some((item) => (item.textContent || '').trim() === 'All')`, 120000);
   assert(await click(['all']));
   assert(await click(['start analysis']));
+
+  if (process.argv.includes('--cancel-at-start')) {
+    await waitFor(`[...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Cancel')`, 10000);
+    const cancelStartedAt = Date.now();
+    assert(await click(['cancel'], true));
+    await waitFor(`![...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Cancel')`, 10000);
+    const remaining = await evaluate(`window.electronAPI.getPhotos(${albumLiteral}, { mode: 'fast' }).then(photos => photos.length)`);
+    assert.strictEqual(remaining, photoCount, 'Cancelling analysis changed the original files.');
+    socket.terminate();
+    completed = true;
+    process.stdout.write(`${JSON.stringify({ cancelled: true, elapsedMs: Date.now() - cancelStartedAt, photoCount, originalsUnchanged: true })}\n`);
+    return;
+  }
 
   const scopeMs = await waitFor(
     `document.body.textContent.includes('All ${photoCount} selected photos are included in this run.')`,
@@ -141,8 +105,59 @@ async function main() {
     expanded: document.body.innerText.includes('▼'),
     imageCount: document.querySelectorAll('img').length,
   })`);
+  let largeGroup = null;
+  if (process.argv.includes('--verify-large-group')) {
+    await evaluate(`(() => {
+      const grid = [...document.querySelectorAll('div')].find(element => element.style.overflowY === 'auto' && element.style.height === '500px');
+      if (!grid) throw new Error('Large duplicate group was not virtualized.');
+      grid.scrollIntoView({ block: 'center' });
+    })()`);
+    await waitFor(`[...document.querySelectorAll('img')].some(image => image.complete && image.naturalWidth > 0)`);
+    const readGrid = `(() => {
+      const grid = [...document.querySelectorAll('div')].find(element => element.style.overflowY === 'auto' && element.style.height === '500px');
+      if (!grid) throw new Error('Large duplicate group was not virtualized.');
+      const cards = [...grid.firstElementChild.children];
+      return { count: cards.length, first: cards[0]?.innerText, last: cards.at(-1)?.innerText, height: grid.scrollHeight, viewport: grid.clientHeight };
+    })()`;
+    const before = await evaluate(readGrid);
+    assert(before.count > 0 && before.count < 100, 'A large duplicate group mounted too many cards.');
+    assert(before.height > before.viewport * 2);
+    await evaluate(`(() => {
+      const grid = [...document.querySelectorAll('div')].find(element => element.style.overflowY === 'auto' && element.style.height === '500px');
+      grid.scrollTop = grid.scrollHeight;
+      grid.dispatchEvent(new Event('scroll', { bubbles: true }));
+    })()`);
+    await waitFor(`(${readGrid}).last !== ${JSON.stringify(before.last)}`);
+    await waitFor(`(() => {
+      const grid = [...document.querySelectorAll('div')].find(element => element.style.overflowY === 'auto' && element.style.height === '500px');
+      return [...grid.querySelectorAll('img')].some(image => image.complete && image.naturalWidth > 0);
+    })()`);
+    const bottom = await evaluate(readGrid);
+    const selected = await evaluate(`(() => {
+      const grid = [...document.querySelectorAll('div')].find(element => element.style.overflowY === 'auto' && element.style.height === '500px');
+      const card = grid.firstElementChild.lastElementChild;
+      const filename = card.lastElementChild.textContent;
+      const decision = card.innerText;
+      card.click();
+      return { filename, decision };
+    })()`);
+    await waitFor(`(${readGrid}).last !== ${JSON.stringify(selected.decision)}`);
+    const afterSelection = await evaluate(readGrid);
+    await evaluate(`(() => {
+      const grid = [...document.querySelectorAll('div')].find(element => element.style.overflowY === 'auto' && element.style.height === '500px');
+      grid.scrollTop = 0; grid.dispatchEvent(new Event('scroll', { bubbles: true }));
+    })()`);
+    await waitFor(`(${readGrid}).first === ${JSON.stringify(before.first)}`);
+    await evaluate(`(() => {
+      const grid = [...document.querySelectorAll('div')].find(element => element.style.overflowY === 'auto' && element.style.height === '500px');
+      grid.scrollTop = grid.scrollHeight; grid.dispatchEvent(new Event('scroll', { bubbles: true }));
+    })()`);
+    await waitFor(`(${readGrid}).last === ${JSON.stringify(afterSelection.last)}`);
+    largeGroup = { before, bottom, selectedFilename: selected.filename, selectionSurvivedScroll: true };
+  }
   socket.terminate();
   activeSocket = null;
+  completed = true;
   process.stdout.write(`${JSON.stringify({
     photoCount,
     scopeMs,
@@ -151,6 +166,7 @@ async function main() {
     completionMs,
     completionSummary: completionText.split(/\r?\n/).filter((line) => /Found |No duplicate/.test(line)).slice(0, 3),
     resultUi,
+    largeGroup,
   })}\n`);
 }
 
