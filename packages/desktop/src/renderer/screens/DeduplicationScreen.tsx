@@ -128,7 +128,7 @@ async function addDedupeSignaturesToCandidatePhotos(
     isCancelled?: () => boolean;
     onProgress?: (progress: SignatureProgress) => void;
   } = {},
-): Promise<void> {
+): Promise<void | false> {
   if (
     !window.electronAPI?.fs.computeContentHashes
     || !window.electronAPI.fs.computeVisualHashes

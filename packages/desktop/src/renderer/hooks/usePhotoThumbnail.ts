@@ -41,7 +41,7 @@ function enqueueThumbnailTask<T>(
   priority: boolean,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const task = {
+    const task: QueueTask = {
       taskKey,
       run: async () => run(),
       resolve: (value) => resolve(value as T),
@@ -122,7 +122,7 @@ async function requestThumbnail(
     const reason = result?.reason ?? (nextSrc ? null : 'thumbnail_failed');
 
     if (!nextSrc) {
-      thumbnailNullCache.set(cacheKey, { reason, cachedAt: Date.now() });
+      thumbnailNullCache.set(cacheKey, { reason: reason ?? 'thumbnail_failed', cachedAt: Date.now() });
       return { uri: null, reason };
     }
 

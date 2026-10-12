@@ -105,7 +105,8 @@ export function HomeScreen(): React.JSX.Element {
     const loadAlbums = async () => {
       try {
         if (window.electronAPI) {
-          const dirs = await window.electronAPI.getAlbums();
+          const electronAPI = window.electronAPI;
+          const dirs = await electronAPI.getAlbums();
           if (!isMounted) return;
           const albumsWithCachedCounts = applyCachedAlbumCounts(dirs);
           setAlbums(albumsWithCachedCounts);
@@ -126,14 +127,14 @@ export function HomeScreen(): React.JSX.Element {
                 continue;
               }
               try {
-                const actualStats = await window.electronAPI.getAlbumStats(album.id);
+                const actualStats = await electronAPI.getAlbumStats(album.id);
                 if (!isMounted) return;
                 const currentCachedCount = applyCachedAlbumCounts([album])[0]?.photoCount;
                 if (
                   actualStats.photoCount === currentCachedCount
                   && actualStats.totalBytes === album.totalBytes
                 ) continue;
-                const updated = await window.electronAPI.saveAlbum(
+                const updated = await electronAPI.saveAlbum(
                   album.id,
                   actualStats.photoCount,
                   actualStats.totalBytes,

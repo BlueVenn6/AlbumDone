@@ -1042,7 +1042,7 @@ const ThumbnailImage = memo(function ThumbnailImage({
   alt: string;
   dimmed: boolean;
   shouldLoad: boolean;
-  initialSrc?: string;
+  initialSrc?: string | undefined;
 }) {
   const { src } = usePhotoThumbnail(filePath, shouldLoad, initialSrc);
 
