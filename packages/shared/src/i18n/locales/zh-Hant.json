@@ -340,6 +340,15 @@
   "settings": {
     "title": "設定",
     "apiConfig": {
+      "protocolLabel": "請求協議",
+      "customBaseUrlLabel": "API 位址（必填）",
+      "textTest": "測試文字",
+      "imageTest": "測試圖片",
+      "passed": "已通過",
+      "retestRequired": "需要重新測試",
+      "textTestSuccess": "文字測試已通過",
+      "imageTestSuccess": "圖片測試已通過",
+      "customTestHint": "請填寫服務商提供的準確模型名和 API 位址。圖片測試傳送應用產生的色塊圖；位址、模型、協議或 Key 改變後需要重新測試。",
       "title": "API 設定",
       "description": "API Key 儲存在裝置本機加密儲存中（iOS/macOS 使用 Keychain，Android 使用 Keystore，Windows 使用 Credential Manager）。所有請求都會從你的裝置直接傳送至服務商，App 不持有任何 Key。",
       "keyLabel": "API Key",

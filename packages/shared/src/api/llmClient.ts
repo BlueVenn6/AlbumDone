@@ -10,6 +10,7 @@ import {
   type LLMMessage,
   type LLMResponse,
   type ProviderConfig,
+  type LLMConnectionTestMode,
 } from '../types';
 import {
   buildAnthropicMessagesUrl,
@@ -129,11 +130,11 @@ function cleanLLMOutput(text: string): string {
     .replace(/^\s+|\s+$/g, '');
 }
 
-function isConnectionProbeResponse(text: string): boolean {
+function isConnectionProbeResponse(text: string, expected = 'ok'): boolean {
   return cleanLLMOutput(text)
     .replace(/[.!。！]+$/g, '')
     .trim()
-    .toLowerCase() === 'ok';
+    .toLowerCase() === expected;
 }
 
 function anthropicSupportsTemperature(model: string): boolean {
@@ -207,6 +208,9 @@ export class LLMClient {
   }
 
   private supportsVision(): boolean {
+    if (this.config.provider === 'custom' && this.config.protocol) {
+      return configSupportsVision(this.config);
+    }
     if (this.config.mode === 'proxy') {
       return configSupportsVision(this.config);
     }
@@ -766,7 +770,7 @@ export class LLMClient {
 
     if (!resp.ok) {
       const text = await resp.text();
-      if (!isOfficialAnthropic && [400, 401, 403, 404, 405].includes(resp.status)) {
+      if (!isOfficialAnthropic && !this.config.protocol && [400, 401, 403, 404, 405].includes(resp.status)) {
         return this.callOpenAICompatible(messages, options);
       }
       throw createLLMClientError({
@@ -938,6 +942,16 @@ export class LLMClient {
   }
 
   async chat(messages: LLMMessage[], options: LLMRequestOptions = {}): Promise<LLMResponse> {
+    if (this.config.provider === 'custom' && this.config.protocol) {
+      if (!this.config.baseUrl?.trim()) throw new Error('Base URL is required.');
+      switch (this.config.protocol) {
+        case 'responses': return this.callOpenAIResponses(messages, options);
+        case 'chat_completions': return this.callOpenAICompatible(messages, options);
+        case 'anthropic_messages': return this.callAnthropic(messages, options);
+        case 'google_generate_content': return this.callGenerateContent(messages, options);
+        default: throw new Error('Unsupported custom endpoint protocol.');
+      }
+    }
     if (this.config.mode === 'proxy') {
       return this.callOpenAIProxy(messages, options);
     }
@@ -955,7 +969,7 @@ export class LLMClient {
     }
   }
 
-  async testConnection(): Promise<TestConnectionResult> {
+  async testConnection(testMode?: LLMConnectionTestMode): Promise<TestConnectionResult> {
     const isKimiK2 =
       this.config.provider === COMPAT_PROVIDER_A && this.config.model?.startsWith(COMPAT_MODEL_A_K2_PREFIX);
     const isMiniMaxM3 =
@@ -964,14 +978,21 @@ export class LLMClient {
       && COMPAT_REASONING_VISION_PATTERN.test(this.config.model);
     const maxTokens = isKimiK2 ? 2048 : isMiniMaxM3 || isReasoningVisionModel ? 512 : 32;
     const timeoutMs = isMiniMaxM3 ? 60000 : 20000;
-    const shouldTestVision = this.supportsVision();
+    const shouldTestVision = testMode ? testMode === 'vision' : this.supportsVision();
+    const expectedReply = testMode === 'vision' ? 'red' : 'ok';
+    const testImage = testMode === 'vision'
+      ? 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAe0lEQVR4nO3PQQ0AIBDAsLPBG/+20IEIHg3Jkgno5qz9dcMFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjx2AQF2IQ9lIzkRAAAAAElFTkSuQmCC'
+      : `data:image/jpeg;base64,${CONNECTION_TEST_IMAGE_BASE64}`;
 
     try {
       const response = shouldTestVision
-        ? await this.chatWithImage(
-          'This is an application-generated connection test image. Reply with just "ok".',
-          CONNECTION_TEST_IMAGE_BASE64,
-          'image/jpeg',
+        ? await this.chat(
+          [{ role: 'user', content: [
+            { type: 'image_url', image_url: { url: testImage, detail: 'high' } },
+            { type: 'text', text: testMode === 'vision'
+              ? 'What is the dominant color of this image? Reply with just the English color name.'
+              : 'This is an application-generated connection test image. Reply with just "ok".' },
+          ] }],
           { maxTokens, temperature: 0, timeoutMs },
         )
         : await this.chat(
@@ -979,7 +1000,7 @@ export class LLMClient {
           { maxTokens, temperature: 0, timeoutMs },
         );
 
-      if (isConnectionProbeResponse(response.content)) {
+      if (isConnectionProbeResponse(response.content, expectedReply)) {
         return {
           success: true,
           mode: shouldTestVision ? 'vision' : 'text',

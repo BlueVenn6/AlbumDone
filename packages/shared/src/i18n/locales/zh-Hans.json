@@ -340,6 +340,15 @@
   "settings": {
     "title": "设置",
     "apiConfig": {
+      "protocolLabel": "请求协议",
+      "customBaseUrlLabel": "API 地址（必填）",
+      "textTest": "测试文字",
+      "imageTest": "测试图片",
+      "passed": "已通过",
+      "retestRequired": "需要重新测试",
+      "textTestSuccess": "文字测试已通过",
+      "imageTestSuccess": "图片测试已通过",
+      "customTestHint": "请填写服务商提供的准确模型名和 API 地址。图片测试发送应用生成的色块图；地址、模型、协议或 Key 改变后需要重新测试。",
       "title": "API 配置",
       "description": "API Key 存储在设备本地加密存储中（iOS/macOS 使用 Keychain，Android 使用 Keystore，Windows 使用 Credential Manager）。所有请求从你的设备直接发往服务商，App 不持有任何 Key。",
       "keyLabel": "API Key",

@@ -81,11 +81,11 @@ async function main() {
     await send('Page.reload', { ignoreCache: true });
     await waitFor(`document.body.innerText.includes('Screenshots (')`);
     await waitFor(`document.querySelector('img')?.complete && document.querySelector('img')?.naturalWidth > 0`);
+    await waitFor(`[...document.querySelectorAll('div')].some(row =>
+      row.style.position === 'absolute' && row.style.top && row.textContent.includes('Screenshot_'))`);
     await evaluate(`(() => {
-      const thumbnail = document.querySelector('img');
-      if (!thumbnail) throw new Error('Screenshot thumbnail missing.');
-      let row = thumbnail.parentElement;
-      while (row && !row.style.top) row = row.parentElement;
+      const row = [...document.querySelectorAll('div')].find(item =>
+        item.style.position === 'absolute' && item.style.top && item.textContent.includes('Screenshot_'));
       if (!row) throw new Error('Screenshot row missing.');
       row.click();
     })()`);

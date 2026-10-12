@@ -13,13 +13,23 @@ import type {
   OcrLanguage,
   CustomInstruction,
 } from '../types';
-import { DEFAULT_SETTINGS, configSupportsVision, normalizeProviderModel } from '../types';
+import { DEFAULT_SETTINGS, CUSTOM_LLM_PROTOCOLS, configSupportsVision, getValidConnectionTests, normalizeProviderModel } from '../types';
+
+function getCustomProviderFields(config: ProviderConfig): Partial<ProviderConfig> {
+  if (config.provider !== 'custom' || !config.protocol) return {};
+  if (!CUSTOM_LLM_PROTOCOLS.includes(config.protocol)) {
+    throw new Error('Unsupported custom endpoint protocol.');
+  }
+  const connectionTests = getValidConnectionTests(config);
+  return { protocol: config.protocol, ...(connectionTests ? { connectionTests } : {}) };
+}
 
 function createRuntimeProviderConfig(config: ProviderConfig): ProviderConfig {
   const trimmedApiKey = config.apiKey?.trim();
 
   return {
     provider: config.provider,
+    ...getCustomProviderFields(config),
     model: normalizeProviderModel(config.provider, config.model),
     ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {}),
     ...(config.baseUrl?.trim() ? { baseUrl: config.baseUrl.trim() } : {}),
@@ -38,6 +48,7 @@ function sanitizeProviderConfigForPersistence(
 ): ProviderConfig {
   return {
     provider,
+    ...getCustomProviderFields({ ...config, provider }),
     model: normalizeProviderModel(provider, config.model),
     hasApiKey: Boolean(config.apiKey?.trim() || config.hasApiKey),
     mode: config.mode ?? 'direct',

@@ -11,7 +11,7 @@ export function resolveDesktopLLMRoute(
   return resolveProviderRoute(
     providers,
     {
-      providerKey,
+      ...(providerKey !== undefined ? { providerKey } : {}),
       defaultVisionProvider,
       defaultTextProvider,
     },
@@ -52,10 +52,12 @@ export async function createDesktopLLMClient(
 
   const requestConfig = {
     provider: route.provider,
-    baseUrl: config.baseUrl,
+    ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
     model: config.model,
     supportsVision: config.supportsVision,
-    mode: config.mode,
+    ...(config.mode ? { mode: config.mode } : {}),
+    ...(config.protocol ? { protocol: config.protocol } : {}),
+    ...(config.connectionTests ? { connectionTests: config.connectionTests } : {}),
   };
 
   return {

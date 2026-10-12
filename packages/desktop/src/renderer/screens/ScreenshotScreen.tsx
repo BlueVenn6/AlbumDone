@@ -213,7 +213,8 @@ export function ScreenshotScreen(): React.JSX.Element {
     const albumPhotos = photos.filter((photo) => photo.albumId === albumId);
     const shots = filterScreenshots(albumPhotos);
     setScreenshots(shots);
-    if (shots.length > 0 && !activeId) setActiveId(shots[0].id);
+    const firstShot = shots[0];
+    if (firstShot && !activeId) setActiveId(firstShot.id);
   }, [activeId, albumId, photos, photosError, photosLoading]);
 
   useEffect(() => {
@@ -361,10 +362,12 @@ export function ScreenshotScreen(): React.JSX.Element {
         }
         const response = await window.electronAPI?.screenshot.executeInstruction({
           provider: activeVisionRoute.provider,
-          baseUrl: activeVisionRoute.config.baseUrl,
+          ...(activeVisionRoute.config.baseUrl ? { baseUrl: activeVisionRoute.config.baseUrl } : {}),
           model: activeVisionRoute.config.model,
           supportsVision: activeVisionRoute.config.supportsVision,
-          mode: activeVisionRoute.config.mode,
+          ...(activeVisionRoute.config.mode ? { mode: activeVisionRoute.config.mode } : {}),
+          ...(activeVisionRoute.config.protocol ? { protocol: activeVisionRoute.config.protocol } : {}),
+          ...(activeVisionRoute.config.connectionTests ? { connectionTests: activeVisionRoute.config.connectionTests } : {}),
           instruction: instructionText,
           imageBase64: previewImage.base64,
           mimeType: previewImage.mimeType,
@@ -729,7 +732,12 @@ export function ScreenshotScreen(): React.JSX.Element {
               {visionProviderOptions.length > 0 && (
                 <select
                   value={selectedVisionProvider}
-                  onChange={(event) => setSelectedVisionProvider(event.target.value)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (!value || visionProviderOptions.some((option) => option.provider === value)) {
+                      setSelectedVisionProvider(value as LLMProvider | '');
+                    }
+                  }}
                   style={styles.modelSelect}
                 >
                   <option value="">{t('screenshots.useDefaultModel')}</option>
@@ -929,7 +937,7 @@ const ScreenshotSidebarThumb = memo(function ScreenshotSidebarThumb({
 }: {
   filePath: string;
   alt: string;
-  initialSrc?: string;
+  initialSrc?: string | undefined;
   scrollRoot: HTMLDivElement | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1455,10 +1463,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     opacity: 0.6,
     transition: 'opacity 0.15s, color 0.15s',
-    ':hover': {
-      opacity: 1,
-      color: colors.danger,
-    },
   },
   bulkActions: {
     padding: spacing.md,

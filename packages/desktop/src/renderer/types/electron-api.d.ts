@@ -4,6 +4,9 @@ import type {
   LLMResponse,
   Photo,
   ProviderMode,
+  CustomLLMProtocol,
+  ProviderConnectionTests,
+  LLMConnectionTestMode,
   TestConnectionResult,
   YearInReviewResult,
 } from '@photo-manager/shared';
@@ -14,6 +17,8 @@ type DesktopProviderRequest = {
   model: string;
   supportsVision?: boolean;
   mode?: ProviderMode;
+  protocol?: CustomLLMProtocol;
+  connectionTests?: ProviderConnectionTests;
 };
 
 declare global {
@@ -127,7 +132,7 @@ declare global {
       };
       llm: {
         testConnection(
-          params: DesktopProviderRequest & { apiKey?: string },
+          params: DesktopProviderRequest & { apiKey?: string; testMode?: LLMConnectionTestMode },
         ): Promise<TestConnectionResult>;
         chat(
           params: DesktopProviderRequest & {

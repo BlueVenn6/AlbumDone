@@ -190,14 +190,33 @@ export function buildGenerateContentUrl(
 }
 
 export function resolveLLMEndpoint(
-  config: Pick<ProviderConfig, 'provider' | 'mode' | 'baseUrl' | 'model'>,
+  config: Pick<ProviderConfig, 'provider' | 'mode' | 'baseUrl' | 'model' | 'protocol'>,
 ): ResolvedLLMEndpoint {
   const mode = config.mode ?? 'direct';
   const fallbackBaseUrl = getDefaultProviderBaseUrl(config.provider);
   let protocol: LLMEndpointProtocol;
   let endpointUrl: string;
 
-  if (mode === 'proxy') {
+  if (config.provider === 'custom' && config.protocol) {
+    if (!config.baseUrl?.trim()) throw new Error('Base URL is required.');
+    protocol = config.protocol;
+    switch (protocol) {
+      case 'responses':
+        endpointUrl = buildOpenAIResponsesUrl(config.baseUrl, fallbackBaseUrl);
+        break;
+      case 'chat_completions':
+        endpointUrl = buildOpenAIChatCompletionsUrl(config.baseUrl, fallbackBaseUrl);
+        break;
+      case 'anthropic_messages':
+        endpointUrl = buildAnthropicMessagesUrl(config.baseUrl, fallbackBaseUrl);
+        break;
+      case 'google_generate_content':
+        endpointUrl = buildGenerateContentUrl(config.baseUrl, config.model, '', fallbackBaseUrl);
+        break;
+      default:
+        throw new Error('Unsupported custom endpoint protocol.');
+    }
+  } else if (mode === 'proxy') {
     protocol = 'openai_compatible_negotiation';
     endpointUrl = /^(?:gpt-5|o[134](?:-|$)|claude-)/i.test(config.model)
       ? buildOpenAIResponsesUrl(config.baseUrl, fallbackBaseUrl)

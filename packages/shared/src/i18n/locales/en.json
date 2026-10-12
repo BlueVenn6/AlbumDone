@@ -340,6 +340,15 @@
   "settings": {
     "title": "Settings",
     "apiConfig": {
+      "protocolLabel": "Request protocol",
+      "customBaseUrlLabel": "API address (required)",
+      "textTest": "Test text",
+      "imageTest": "Test image",
+      "passed": "Passed",
+      "retestRequired": "Retest required",
+      "textTestSuccess": "Text test passed",
+      "imageTestSuccess": "Image test passed",
+      "customTestHint": "Use the exact model ID and API address supplied by your provider. Image testing sends an app-generated color image. Address, model, protocol or Key changes require retesting.",
       "title": "API Configuration",
       "description": "Your API keys are stored locally in system secure storage (Keychain / Credential Manager). All requests go directly from your device to the provider.",
       "keyLabel": "API Key",

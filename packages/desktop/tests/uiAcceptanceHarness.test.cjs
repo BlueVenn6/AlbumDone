@@ -20,7 +20,7 @@ const { WebSocketServer } = require('ws');
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     for (const script of ['cdp-pre-release-smoke.cjs', 'cdp-culling-performance.cjs', 'cdp-dedup-progress-smoke.cjs',
-      'cdp-ai-workflow.cjs', 'cdp-settings-migration.cjs']) {
+      'cdp-ai-workflow.cjs', 'cdp-settings-migration.cjs', 'cdp-custom-endpoint.cjs']) {
       const child = spawn(process.execPath, [
         path.join(__dirname, '../scripts', script),
         String(server.address().port), os.tmpdir(), os.tmpdir(),

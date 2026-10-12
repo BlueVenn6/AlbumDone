@@ -30,6 +30,23 @@ const CURRENT_MODEL_C_PRO = `${COMPAT_MODEL_C_PREFIX}-v4-pro`;
 
 export type ProviderMode = 'direct' | 'proxy';
 
+export const CUSTOM_LLM_PROTOCOLS = [
+  'responses', 'chat_completions', 'anthropic_messages', 'google_generate_content',
+] as const;
+export type CustomLLMProtocol = typeof CUSTOM_LLM_PROTOCOLS[number];
+export const CUSTOM_LLM_PROTOCOL_LABELS: Record<CustomLLMProtocol, string> = {
+  responses: 'OpenAI Responses',
+  chat_completions: 'OpenAI Chat Completions',
+  anthropic_messages: 'Claude Messages',
+  google_generate_content: 'Gemini generateContent',
+};
+export type LLMConnectionTestMode = 'text' | 'vision';
+export type ProviderConnectionTests = {
+  signature: string;
+  text?: boolean;
+  vision?: boolean;
+};
+
 export type ProviderConfig = {
   provider: LLMProvider;
   apiKey?: string;
@@ -38,6 +55,8 @@ export type ProviderConfig = {
   model: string;
   supportsVision: boolean;
   mode?: ProviderMode;
+  protocol?: CustomLLMProtocol;
+  connectionTests?: ProviderConnectionTests;
 };
 
 export type LLMMessage = {
@@ -264,10 +283,48 @@ export function proxyModelSupportsVision(
 
 export function configSupportsVision(config?: ProviderConfig): boolean {
   if (!config) return false;
+  if (config.provider === 'custom' && config.protocol) {
+    return getValidConnectionTests(config)?.vision === true;
+  }
   if (config.mode === 'proxy') {
     return proxyModelSupportsVision(config.provider, config.model, config.baseUrl);
   }
   return modelSupportsVision(config.provider, config.model, config.baseUrl);
+}
+
+// Bind test results to the exact route without persisting credentials.
+// Forms discard this record whenever the customer edits their API key.
+export function getProviderConfigSignature(config: ProviderConfig): string {
+  return JSON.stringify([
+    config.provider, config.baseUrl?.trim() ?? '', config.model.trim(),
+    config.mode ?? 'direct', config.protocol ?? '',
+  ]);
+}
+
+export function getValidConnectionTests(config?: ProviderConfig): ProviderConnectionTests | undefined {
+  if (!config?.connectionTests || config.connectionTests.signature !== getProviderConfigSignature(config)) {
+    return undefined;
+  }
+  const tests = config.connectionTests;
+  return {
+    signature: tests.signature,
+    ...(typeof tests.text === 'boolean' ? { text: tests.text } : {}),
+    ...(typeof tests.vision === 'boolean' ? { vision: tests.vision } : {}),
+  };
+}
+
+export function withConnectionTestResult(
+  config: ProviderConfig, mode: LLMConnectionTestMode, success: boolean,
+): ProviderConfig {
+  const next = {
+    ...config,
+    connectionTests: {
+      ...getValidConnectionTests(config),
+      signature: getProviderConfigSignature(config),
+      [mode]: success,
+    },
+  };
+  return { ...next, supportsVision: configSupportsVision(next) };
 }
 
 export type ResolvedProviderRoute = {

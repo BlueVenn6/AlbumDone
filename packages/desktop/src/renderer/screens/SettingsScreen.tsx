@@ -1,15 +1,20 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { colors, typography, spacing, radius } from '../theme';
 import {
   useSettingsStore,
   PROVIDER_MODELS,
   configSupportsVision,
+  CUSTOM_LLM_PROTOCOLS,
+  CUSTOM_LLM_PROTOCOL_LABELS,
+  getValidConnectionTests,
+  getProviderConfigSignature,
+  withConnectionTestResult,
   formatProviderRouteLabel,
   getConfiguredProviders,
   modelSupportsVision,
   useTranslation,
 } from '@photo-manager/shared';
-import type { LLMProvider, ProviderConfig, ProviderMode, TrashRetentionDays } from '@photo-manager/shared';
+import type { LLMProvider, ProviderConfig, ProviderMode, CustomLLMProtocol, LLMConnectionTestMode, TrashRetentionDays } from '@photo-manager/shared';
 
 const PROVIDERS = Object.entries(PROVIDER_MODELS) as [LLMProvider, typeof PROVIDER_MODELS[LLMProvider]][];
 const API_ERROR_KEY_BY_CATEGORY: Record<string, string> = {
@@ -24,6 +29,7 @@ const API_ERROR_KEY_BY_CATEGORY: Record<string, string> = {
   server: 'settings.apiConfig.errors.server',
   timeout: 'settings.apiConfig.errors.timeout',
   empty_response: 'settings.apiConfig.errors.emptyResponse',
+  invalid_response: 'settings.apiConfig.errors.invalidResponse',
   unknown: 'settings.apiConfig.errors.unknown',
 };
 
@@ -182,7 +188,7 @@ function ProviderCard({
 }: {
   providerKey: LLMProvider;
   meta: typeof PROVIDER_MODELS[LLMProvider];
-  config?: ProviderConfig;
+  config?: ProviderConfig | undefined;
   expanded: boolean;
   onToggle: () => void;
   onSave: (config: ProviderConfig) => void;
@@ -196,9 +202,17 @@ function ProviderCard({
     m && meta.models.length > 0 && !isPresetModel(m) ? '__custom__' : (m ?? meta.models[0] ?? '');
   const [model, setModel] = useState(() => getModelSelectValue(config?.model));
   const [customModel, setCustomModel] = useState(() =>
-    config?.model && meta.models.length > 0 && !isPresetModel(config.model) ? config.model : '',
+    config?.model && (meta.models.length === 0 || !isPresetModel(config.model)) ? config.model : '',
   );
   const [mode, setMode] = useState<ProviderMode>(config?.mode ?? 'direct');
+  const [protocol, setProtocol] = useState<CustomLLMProtocol>(config?.protocol ?? (config?.mode === 'proxy' ? 'chat_completions' : 'responses'));
+  const [connectionTests, setConnectionTests] = useState(() => getValidConnectionTests(config));
+  const testRevision = useRef(0);
+  const resetTestState = useCallback(() => {
+    testRevision.current += 1;
+    setConnectionTests(undefined);
+    setTestResult(null);
+  }, []);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [keyStatus, setKeyStatus] = useState<{ hasApiKey: boolean; maskedKey?: string } | null>(null);
@@ -209,12 +223,16 @@ function ProviderCard({
     if (config?.baseUrl !== undefined) setBaseUrl(config.baseUrl ?? '');
     if (config?.model) {
       setModel(getModelSelectValue(config.model));
-      if (meta.models.length > 0 && !isPresetModel(config.model)) {
+      if (meta.models.length === 0 || !isPresetModel(config.model)) {
         setCustomModel(config.model);
       }
     }
     setMode(config?.mode ?? 'direct');
-  }, [config?.baseUrl, config?.model, config?.mode]);
+    setProtocol(config?.protocol ?? (config?.mode === 'proxy' ? 'chat_completions' : 'responses'));
+    setConnectionTests(getValidConnectionTests(config));
+  }, [config?.baseUrl, config?.model, config?.mode, config?.protocol, config?.connectionTests]);
+
+  useEffect(() => () => { testRevision.current += 1; }, []);
 
   useEffect(() => {
     if (!expanded) return;
@@ -222,7 +240,7 @@ function ProviderCard({
       .then((status) => {
         setKeyStatus(status ? {
           hasApiKey: status.hasApiKey,
-          maskedKey: status.maskedKey,
+          ...(status.maskedKey ? { maskedKey: status.maskedKey } : {}),
         } : null);
       })
       .catch(() => setKeyStatus(null));
@@ -230,17 +248,19 @@ function ProviderCard({
 
   const buildCurrentConfig = useCallback((): ProviderConfig => {
     const finalModel = (meta.models.length === 0 || model === '__custom__' ? customModel : model).trim();
-    return {
+    const nextConfig: ProviderConfig = {
       provider: providerKey,
       hasApiKey: Boolean(apiKey.trim() || keyStatus?.hasApiKey || config?.hasApiKey),
-      baseUrl: baseUrl.trim() || undefined,
+      ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
       model: finalModel,
       supportsVision: mode === 'proxy'
         ? meta.supportsVision
         : modelSupportsVision(providerKey, finalModel, baseUrl || undefined),
       mode,
+      ...(providerKey === 'custom' ? { protocol, ...(connectionTests ? { connectionTests } : {}) } : {}),
     };
-  }, [apiKey, baseUrl, config?.hasApiKey, customModel, keyStatus?.hasApiKey, meta.supportsVision, mode, model, providerKey]);
+    return { ...nextConfig, supportsVision: configSupportsVision(nextConfig) };
+  }, [apiKey, baseUrl, config?.hasApiKey, customModel, keyStatus?.hasApiKey, meta.supportsVision, mode, model, providerKey, protocol, connectionTests]);
 
   const persistCurrentConfig = useCallback(async (nextConfig: ProviderConfig) => {
     const trimmedApiKey = apiKey.trim();
@@ -250,7 +270,7 @@ function ProviderCard({
       if (status) {
         setKeyStatus({
           hasApiKey: status.hasApiKey,
-          maskedKey: status.maskedKey,
+          ...(status.maskedKey ? { maskedKey: status.maskedKey } : {}),
         });
       }
       setApiKey('');
@@ -278,25 +298,40 @@ function ProviderCard({
     await persistCurrentConfig(buildCurrentConfig());
   }, [baseUrl, buildCurrentConfig, mode, persistCurrentConfig, providerKey, t]);
 
-  const handleTest = useCallback(async () => {
+  const handleTest = useCallback(async (testMode?: LLMConnectionTestMode) => {
     if (!apiKey.trim() && !keyStatus?.hasApiKey && !config?.hasApiKey) return;
+    const endpointRisk = getEndpointRiskKey(baseUrl);
+    if (endpointRisk?.level === 'blocked') {
+      setTestResult({ ok: false, msg: t(endpointRisk.key) });
+      return;
+    }
     if (providerKey === 'qwen' && mode === 'direct' && !baseUrl.trim()) {
       setTestResult({ ok: false, msg: t('settings.apiConfig.qwenWorkspaceRequired') });
       return;
     }
     setTesting(true);
     setTestResult(null);
+    const revision = ++testRevision.current;
+    const nextConfig = buildCurrentConfig();
     try {
-      const nextConfig = buildCurrentConfig();
       const { success, error, category, status } = await window.electronAPI!.llm.testConnection({
-        provider: providerKey,
+        ...nextConfig,
         ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-        baseUrl: nextConfig.baseUrl,
-        model: nextConfig.model,
-        supportsVision: nextConfig.supportsVision,
-        mode: nextConfig.mode,
+        ...(testMode ? { testMode } : {}),
       });
-      if (success) {
+      if (revision !== testRevision.current) return;
+      if (testMode) {
+        const checkedConfig = withConnectionTestResult(nextConfig, testMode, success);
+        setConnectionTests(checkedConfig.connectionTests);
+        if (success) {
+          await persistCurrentConfig(checkedConfig);
+        } else if (config && getProviderConfigSignature(config) === getProviderConfigSignature(nextConfig)) {
+          const savedConfig = apiKey.trim()
+            ? { ...config, connectionTests: { signature: getProviderConfigSignature(config) } }
+            : config;
+          onSave(withConnectionTestResult(savedConfig, testMode, false));
+        }
+      } else if (success) {
         await persistCurrentConfig(nextConfig);
       }
       const errorKey = category ? API_ERROR_KEY_BY_CATEGORY[category] : undefined;
@@ -304,13 +339,15 @@ function ProviderCard({
       setTestResult({
         ok: success,
         msg: success
-          ? t('settings.apiConfig.testSuccess')
+          ? t(testMode === 'vision' ? 'settings.apiConfig.imageTestSuccess' : testMode === 'text' ? 'settings.apiConfig.textTestSuccess' : 'settings.apiConfig.testSuccess')
           : `${errorKey ? t(errorKey) : (error ?? t('settings.apiConfig.testBtn'))}${statusSuffix}`,
       });
+    } catch (error) {
+      if (revision === testRevision.current) setTestResult({ ok: false, msg: error instanceof Error ? error.message : t('settings.apiConfig.testFailed') });
     } finally {
       setTesting(false);
     }
-  }, [apiKey, baseUrl, buildCurrentConfig, mode, persistCurrentConfig, providerKey, t]);
+  }, [apiKey, baseUrl, buildCurrentConfig, mode, persistCurrentConfig, providerKey, t, config, onSave]);
 
   const handleRemove = useCallback(async () => {
     await window.electronAPI?.settings?.deleteApiKey(providerKey);
@@ -318,11 +355,13 @@ function ProviderCard({
     setApiKey('');
     setKeyStatus(null);
     setTestResult(null);
+    resetTestState();
   }, [onRemove, providerKey]);
 
   const isConfigured = Boolean(config?.hasApiKey || keyStatus?.hasApiKey);
-  const canTest = Boolean(apiKey.trim() || isConfigured);
-  const canSave = Boolean(apiKey.trim() || isConfigured);
+  const currentConfig = buildCurrentConfig();
+  const canSave = Boolean((apiKey.trim() || isConfigured) && currentConfig.model && (providerKey !== 'custom' || baseUrl.trim()));
+  const canTest = canSave;
 
   return (
     <div style={styles.providerCard}>
@@ -343,7 +382,8 @@ function ProviderCard({
             <input
               type="password"
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={(e) => { setApiKey(e.target.value); resetTestState(); }}
+              disabled={testing}
               placeholder={isConfigured ? (keyStatus?.maskedKey ?? t('settings.apiConfig.savedKeyPlaceholder')) : 'sk-…'}
               style={styles.input}
             />
@@ -353,12 +393,13 @@ function ProviderCard({
             <label style={styles.fieldLabel}>
               {t(providerKey === 'qwen' && mode === 'direct'
                 ? 'settings.apiConfig.qwenBaseUrlLabel'
-                : 'settings.apiConfig.baseUrlLabel')}
+                : providerKey === 'custom' ? 'settings.apiConfig.customBaseUrlLabel' : 'settings.apiConfig.baseUrlLabel')}
             </label>
             <input
               type="text"
               value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
+              onChange={(e) => { setBaseUrl(e.target.value); resetTestState(); }}
+              disabled={testing}
               placeholder={t(providerKey === 'qwen' && mode === 'direct'
                 ? 'settings.apiConfig.qwenBaseUrlPlaceholder'
                 : 'settings.apiConfig.baseUrlPlaceholder')}
@@ -367,12 +408,19 @@ function ProviderCard({
           </div>
 
           <div style={styles.field}>
-            <label style={styles.fieldLabel}>{t('settings.apiConfig.modeLabel')}</label>
+            <label style={styles.fieldLabel}>{t(providerKey === 'custom' ? 'settings.apiConfig.protocolLabel' : 'settings.apiConfig.modeLabel')}</label>
+            {providerKey === 'custom' ? (
+              <select aria-label={t('settings.apiConfig.protocolLabel')} value={protocol} disabled={testing}
+                onChange={(event) => { setProtocol(event.target.value as CustomLLMProtocol); resetTestState(); }} style={styles.select}>
+                {CUSTOM_LLM_PROTOCOLS.map((option) => <option key={option} value={option}>{CUSTOM_LLM_PROTOCOL_LABELS[option]}</option>)}
+              </select>
+            ) : (
             <div style={styles.modeToggle}>
               {(['direct', 'proxy'] as ProviderMode[]).map((option) => (
                 <button
                   key={option}
-                  onClick={() => setMode(option)}
+                  onClick={() => { setMode(option); resetTestState(); }}
+                  disabled={testing}
                   style={{
                     ...styles.modeToggleButton,
                     ...(mode === option ? styles.modeToggleButtonActive : {}),
@@ -382,6 +430,7 @@ function ProviderCard({
                 </button>
               ))}
             </div>
+            )}
           </div>
 
           <div style={styles.field}>
@@ -389,7 +438,8 @@ function ProviderCard({
             {meta.models.length > 0 ? (
               <select
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
+                onChange={(e) => { setModel(e.target.value); resetTestState(); }}
+                disabled={testing}
                 style={styles.select}
               >
                 {meta.models.map((m) => (
@@ -401,7 +451,8 @@ function ProviderCard({
               <input
                 type="text"
                 value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
+                onChange={(e) => { setCustomModel(e.target.value); resetTestState(); }}
+                disabled={testing}
                 placeholder={t('settings.apiConfig.customModelPlaceholder')}
                 style={styles.input}
               />
@@ -410,13 +461,22 @@ function ProviderCard({
               <input
                 type="text"
                 value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
+                onChange={(e) => { setCustomModel(e.target.value); resetTestState(); }}
+                disabled={testing}
                 placeholder={t('settings.apiConfig.customModelPlaceholder')}
                 style={{ ...styles.input, marginTop: spacing.xs }}
               />
             )}
           </div>
 
+          {providerKey === 'custom' && (
+            <div style={styles.testResult} data-testid="custom-test-status">
+              {t('settings.apiConfig.textTest')}: {t(connectionTests?.text === true ? 'settings.apiConfig.passed' : 'settings.apiConfig.retestRequired')}
+              <br />
+              {t('settings.apiConfig.imageTest')}: {t(connectionTests?.vision === true ? 'settings.apiConfig.passed' : 'settings.apiConfig.retestRequired')}
+              <br />{t('settings.apiConfig.customTestHint')}
+            </div>
+          )}
           {testResult && (
             <div style={{
               ...styles.testResult,
@@ -431,17 +491,23 @@ function ProviderCard({
 
           <div style={styles.providerActions}>
             <button
-              onClick={handleTest}
+              onClick={() => handleTest(providerKey === 'custom' ? 'text' : undefined)}
               disabled={!canTest || testing}
               style={{ ...styles.testBtn, opacity: (!canTest || testing) ? 0.5 : 1 }}
             >
-              {testing ? t('settings.apiConfig.testing') : t('settings.apiConfig.testBtn')}
+              {testing ? t('settings.apiConfig.testing') : t(providerKey === 'custom' ? 'settings.apiConfig.textTest' : 'settings.apiConfig.testBtn')}
             </button>
-            <button onClick={handleSave} disabled={!canSave} style={styles.saveBtn}>
+            {providerKey === 'custom' && (
+              <button onClick={() => handleTest('vision')} disabled={!canTest || testing}
+                style={{ ...styles.testBtn, opacity: (!canTest || testing) ? 0.5 : 1 }}>
+                {t('settings.apiConfig.imageTest')}
+              </button>
+            )}
+            <button onClick={handleSave} disabled={!canSave || testing} style={styles.saveBtn}>
               {t('common.save')}
             </button>
             {isConfigured && (
-              <button onClick={handleRemove} style={styles.removeBtn}>
+              <button onClick={handleRemove} disabled={testing} style={styles.removeBtn}>
                 {t('common.remove')}
               </button>
             )}
