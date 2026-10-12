@@ -84,7 +84,7 @@ Windows 手动筛选有约 80 ms 的反馈延迟；同一张照片连续点击�
 
 Android 最新共享层 22 项行为测试通过，另补跑异步持久化测试、模型配置和平板几何约束；移动端 TypeScript 通过。此前移动端 19 项回归及 Android Validation Kotlin 原生编译通过，新平板/模型调整没有修改 Kotlin。iOS 最新共享层 22 项行为测试与移动端 TypeScript 通过；此前移动端回归通过。Windows 最新 production build 通过，同版本同步/异步缓存、型号参数、有效配置保留、路由回归通过；此前全套共享层和桌面行为测试通过，新增五个验收脚本断线检查及筛选/AI/设置实际页面复测通过。
 
-源码快照保存在 `C:\Users\esthe\AppData\Local\Temp\albumdone-source-freeze-20261012`；证据另归档于 `private/audit-20261012`，当前三端工作树和 Git 数据库保留。三个独立 Git 工作树分别冻结，source src 摘要与包含原生配置/入口/lockfile 的 build-input 摘要分开记录。正式打包前还必须重新核对最终提交和干净状态。Windows Vite 读取 shared/src，而主进程读取 shared/dist；不能只重建 renderer 就宣称主进程更新。现运行窗口只用于 production 页面检查，不能冒充最终安装器。
+源码快照保存在 `C:\Users\esthe\AppData\Local\Temp\albumdone-source-freeze-20261012`；证据另归档于 `private/audit-20261012`，当前三端工作树和 Git 数据库保留。三个独立 Git 工作树分别冻结，source src 摘要与包含原生配置/入口/lockfile 的 build-input 摘要分开记录。正式打包前还必须重新核对最终提交和干净状态。Windows Vite 读取 shared/src，而主进程读取 shared/dist；不能只重建 renderer 就宣称主进程更新。本轮隔离测试窗口只用于 production 页面检查，不能冒充最终安装器；检查结束后通过正常窗口关闭流程退出。
 
 本轮未生成 APK、EXE 安装器或 IPA，因此没有最终 artifact 路径、大小、时间或 SHA-256 可报告。当前等级是 **State B**，不是 State C / D。
 
