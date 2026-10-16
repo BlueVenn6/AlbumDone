@@ -31,8 +31,9 @@ function response(status, body) {
   };
   const transport = async (url, init, timeoutMs) => {
     calls.push({ url, init, timeoutMs });
+    const reply = String(init.body).includes('dominant color') ? 'red' : 'ok';
     return response(200, {
-      candidates: [{ content: { parts: [{ text: 'ok' }] } }],
+      candidates: [{ content: { parts: [{ text: reply }] } }],
     });
   };
 
@@ -50,12 +51,14 @@ function response(status, body) {
   const testBody = JSON.parse(calls[0].init.body);
   assert(Array.isArray(testBody.contents));
   assert(testBody.contents[0].parts.some((part) => typeof part.text === 'string'));
-  assert(testBody.contents[0].parts.some((part) => part.inline_data?.data));
+  assert(testBody.contents[0].parts.some((part) => part.inline_data?.data.startsWith('iVBORw0KGgo')));
 
   const chatResult = await client.chatWithImage('Read this image', 'base64-image', 'image/jpeg');
   assert.strictEqual(chatResult.content, 'ok');
   assert.strictEqual(calls.length, 2);
   assert.strictEqual(calls[1].url, calls[0].url, 'Test and runtime must use the same endpoint.');
+  const imageBody = JSON.parse(calls[1].init.body);
+  assert(imageBody.contents[0].parts.some((part) => part.inline_data?.data === 'base64-image'));
 
   const failed = new LLMClient(config, async () => response(404, {
     error: { message: 'not found' },
@@ -73,7 +76,7 @@ function response(status, body) {
   }, async (url, init, timeoutMs) => {
     deepseekCalls.push({ url, init, timeoutMs });
     return response(200, {
-      choices: [{ message: { content: 'ok' } }],
+      choices: [{ message: { content: 'red' } }],
     });
   });
   const deepseekTest = await deepseekClient.testConnection();
@@ -83,6 +86,7 @@ function response(status, body) {
   const deepseekBody = JSON.parse(deepseekCalls[0].init.body);
   assert.strictEqual(deepseekBody.model, 'deepseek-flash');
   assert(JSON.stringify(deepseekBody.messages).includes('image_url'));
+  assert(JSON.stringify(deepseekBody.messages).includes('iVBORw0KGgo'));
 
   const customDirectCalls = [];
   const customDirectClient = new LLMClient({
@@ -94,7 +98,7 @@ function response(status, body) {
   }, async (url, init, timeoutMs) => {
     customDirectCalls.push({ url, init, timeoutMs });
     return response(200, {
-      output_text: 'ok',
+      output_text: 'red',
     });
   });
   const customDirectTest = await customDirectClient.testConnection();
@@ -103,6 +107,7 @@ function response(status, body) {
   const customDirectBody = JSON.parse(customDirectCalls[0].init.body);
   assert.strictEqual(customDirectBody.model, 'gpt-4.1');
   assert(Array.isArray(customDirectBody.input));
+  assert(JSON.stringify(customDirectBody.input).includes('iVBORw0KGgo'));
 
   const customProxyCalls = [];
   const customProxyClient = new LLMClient({
@@ -114,7 +119,7 @@ function response(status, body) {
   }, async (url, init, timeoutMs) => {
     customProxyCalls.push({ url, init, timeoutMs });
     return response(200, {
-      choices: [{ message: { content: 'ok' } }],
+      choices: [{ message: { content: 'red' } }],
     });
   });
   const customProxyTest = await customProxyClient.testConnection();
@@ -124,6 +129,7 @@ function response(status, body) {
   const customProxyBody = JSON.parse(customProxyCalls[0].init.body);
   assert.strictEqual(customProxyBody.model, 'qwen-vl-plus');
   assert(Array.isArray(customProxyBody.messages));
+  assert(JSON.stringify(customProxyBody.messages).includes('iVBORw0KGgo'));
 
   console.log('shared injected LLM transport tests passed');
 })()

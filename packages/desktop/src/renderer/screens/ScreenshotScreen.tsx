@@ -366,8 +366,6 @@ export function ScreenshotScreen(): React.JSX.Element {
           model: activeVisionRoute.config.model,
           supportsVision: activeVisionRoute.config.supportsVision,
           ...(activeVisionRoute.config.mode ? { mode: activeVisionRoute.config.mode } : {}),
-          ...(activeVisionRoute.config.protocol ? { protocol: activeVisionRoute.config.protocol } : {}),
-          ...(activeVisionRoute.config.connectionTests ? { connectionTests: activeVisionRoute.config.connectionTests } : {}),
           instruction: instructionText,
           imageBase64: previewImage.base64,
           mimeType: previewImage.mimeType,

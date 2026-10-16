@@ -37,11 +37,11 @@ global.localStorage = {
 const { useSettingsStore } = require('../dist/store/settingsStore');
 const state = useSettingsStore.getState();
 assert.strictEqual(state.providers.deepseek.model, 'deepseek-flash');
-assert.strictEqual(state.providers.deepseek.supportsVision, true);
+assert.strictEqual(state.providers.deepseek.supportsVision, true, 'A migrated vision model remains available without a test gate.');
 
 assert.strictEqual(state.providers.minimax.model, 'MiniMax-M3');
 assert.strictEqual(state.providers.google.model, 'gemini-2.5-flash');
-assert.strictEqual(state.defaultVisionProvider, 'minimax');
+assert.strictEqual(state.defaultVisionProvider, 'minimax', 'A migrated vision route must remain selected.');
 assert.strictEqual(state.defaultTextProvider, 'minimax');
 
 console.log('settings persistence migration tests passed');

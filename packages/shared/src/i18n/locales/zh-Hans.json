@@ -1,7 +1,5 @@
 {
   "common": {
-    "permanentDelete": "永久删除并释放空间",
-    "deletedStorage": "已永久删除原文件 {{originalMB}} MB，清理缓存 {{cacheMB}} MB。",
     "back": "返回",
     "cancel": "取消",
     "done": "完成",
@@ -14,11 +12,16 @@
     "remove": "移除",
     "add": "添加",
     "close": "关闭",
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "resetZoom": "重置缩放",
+    "fit": "适合屏幕",
     "retry": "重试",
     "undo": "撤销",
     "keep": "保留",
     "delete": "删除",
     "deleting": "删除中…",
+    "androidDeleteBatchNotice": "Android 将分 {{count}} 批请求系统删除确认。请保持此页面打开，直到删除完成。",
     "notSet": "未设置",
     "unknownError": "未知错误",
     "confirmDeleteCount": "确认删除 {{count}} 项？",
@@ -117,8 +120,6 @@
     }
   },
   "yearInReview": {
-    "preview": "年度回看图片一览",
-    "previewFailed": "图片预览加载失败，请重试或打开已保存的图片。",
     "momentTitle": "{{month}} 代表照片",
     "reasonsSeparator": "，"
   },
@@ -209,6 +210,8 @@
     "kept": "已保留",
     "deleted": "已删除",
     "progress": "{{current}} / {{total}}",
+    "batchProgress": "本批次：{{current}} / {{total}}",
+    "albumProgress": "全相册已审阅：{{reviewed}} / {{total}} · 剩余 {{remaining}} 张",
     "reviewedProgress": "{{reviewed}}/{{total}} 已审阅",
     "batchSize": "本轮处理数量",
     "batchAll": "全部",
@@ -340,35 +343,17 @@
   "settings": {
     "title": "设置",
     "apiConfig": {
-      "protocolLabel": "请求协议",
       "customBaseUrlLabel": "API 地址（必填）",
-      "textTest": "测试文字",
-      "imageTest": "测试图片",
-      "passed": "已通过",
-      "retestRequired": "需要重新测试",
-      "textTestSuccess": "文字测试已通过",
-      "imageTestSuccess": "图片测试已通过",
-      "customTestHint": "请填写服务商提供的准确模型名和 API 地址。图片测试发送应用生成的色块图；地址、模型、协议或 Key 改变后需要重新测试。",
       "title": "API 配置",
       "description": "API Key 存储在设备本地加密存储中（iOS/macOS 使用 Keychain，Android 使用 Keystore，Windows 使用 Credential Manager）。所有请求从你的设备直接发往服务商，App 不持有任何 Key。",
       "keyLabel": "API Key",
       "baseUrlLabel": "Base URL（可选）",
       "qwenBaseUrlLabel": "业务空间 Base URL（必填）",
       "modelLabel": "模型",
-      "modeLabel": "API 类型",
-      "directMode": "原生 API",
-      "proxyMode": "OpenAI 中转",
-      "cloudCompatibleMode": "云端 OpenAI 兼容 API",
-      "responsesMode": "Responses API",
-      "chatCompletionsMode": "Chat Completions API",
-      "anthropicMessagesMode": "Anthropic Messages API",
-      "negotiatedCompatibleMode": "OpenAI 兼容协议自动协商",
-      "officialCompatibleMode": "官方兼容 API",
       "testBtn": "测试连接",
       "testing": "测试中…",
       "testSuccess": "连接成功",
       "testFailed": "连接测试失败",
-      "textTested": "已通过文本请求测试",
       "visionTested": "已通过图片请求测试",
       "configured": "已配置",
       "customModel": "自定义…",
@@ -409,6 +394,7 @@
         "timeout": "网络请求超时，请检查网络或代理服务是否可达。",
         "network": "网络请求失败，请检查网络连接。",
         "emptyResponse": "模型返回为空或不完整。",
+        "invalidResponse": "模型没有返回预期的连接测试结果。",
         "unknown": "模型连接失败，请检查配置后重试。"
       }
     },
@@ -462,7 +448,10 @@
     "photoLoadFailed": "照片加载失败：{{message}}",
     "permissionRequestFailed": "请求相册权限失败：{{message}}",
     "missingPhotoPermission": "缺少相册读取权限，无法加载设备照片。",
-    "checkPhotoPermission": "相册加载失败：请检查照片访问权限。"
+    "checkPhotoPermission": "相册加载失败：请检查照片访问权限。",
+    "limitedPhotoAccess": "当前只允许访问部分照片，显示和整理的数量不是设备完整相册。请重新授权全部照片。",
+    "allowAllPhotos": "允许全部照片",
+    "accessiblePhotoCount": "当前可访问 {{count}} 张照片"
   },
   "photoGrid": {
     "screenshotBadge": "截图"

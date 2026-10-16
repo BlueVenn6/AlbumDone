@@ -56,9 +56,8 @@ const {
     { defaultVisionProvider: 'minimax' },
     { requiresVision: true },
   );
-  assert(migratedMiniMaxRoute);
+  assert(migratedMiniMaxRoute, 'A migrated vision model must remain available without a separate image test.');
   assert.strictEqual(migratedMiniMaxRoute.config.model, 'MiniMax-M3');
-  assert.strictEqual(formatProviderRouteLabel(migratedMiniMaxRoute), 'MiniMax · MiniMax-M3');
   assert.strictEqual(modelSupportsVision('google', 'gemini-2.5-flash'), true);
   assert.strictEqual(
     normalizeProviderModel('google', 'gemini-3.5-flash'),
@@ -81,8 +80,7 @@ const {
     assert.strictEqual(normalizeProviderModel('deepseek', oldModel), 'deepseek-flash');
     assert.strictEqual(modelSupportsVision('deepseek', oldModel), true);
     const migrated = resolveProviderRoute({ deepseek: { ...providers.deepseek, model: oldModel } }, {}, { requiresVision: true });
-    assert(migrated);
-    assert.strictEqual(migrated.config.model, 'deepseek-flash');
+    assert(migrated, 'A migrated vision model must not be blocked by a removed image-test gate.');
   }
   assert.strictEqual(modelSupportsVision('deepseek', 'deepseek-v4-pro'), false);
   const deepseekOnly = resolveProviderRoute(

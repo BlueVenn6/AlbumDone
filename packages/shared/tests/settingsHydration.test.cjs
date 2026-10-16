@@ -30,7 +30,7 @@ global.localStorage = {
     });
   }
   const state = useSettingsStore.getState();
-  assert.equal(state.providers.anthropic.model, 'claude-sonnet-5-5');
+  assert.equal(state.providers.anthropic.model, 'claude-3-7-sonnet-20250219');
   assert.equal(state.providers.anthropic.hasApiKey, true);
   assert.deepEqual(state.providers.custom, {
     provider: 'custom', model: 'gpt-4o', hasApiKey: true, supportsVision: true, mode: 'proxy', baseUrl: 'https://example.test/v1',

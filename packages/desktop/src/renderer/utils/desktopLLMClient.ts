@@ -56,8 +56,6 @@ export async function createDesktopLLMClient(
     model: config.model,
     supportsVision: config.supportsVision,
     ...(config.mode ? { mode: config.mode } : {}),
-    ...(config.protocol ? { protocol: config.protocol } : {}),
-    ...(config.connectionTests ? { connectionTests: config.connectionTests } : {}),
   };
 
   return {

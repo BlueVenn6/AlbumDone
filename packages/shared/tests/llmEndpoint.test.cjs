@@ -11,6 +11,7 @@ const {
   resolveLLMEndpoint,
 } = require('../dist/api/llmEndpoint');
 const { parseHttpUrl, trimTrailingSlashes } = require('../dist/utils/httpUrl');
+const { inferProviderMode } = require('../dist/types');
 
 {
   const trailingSlashes = '/'.repeat(100_000);
@@ -28,7 +29,12 @@ const { parseHttpUrl, trimTrailingSlashes } = require('../dist/utils/httpUrl');
       pathname: `/${longPath}`,
       search: '?trace=1',
       hostname: 'api.example.com',
+      hasCredentials: false,
     },
+  );
+  assert.strictEqual(
+    parseHttpUrl('https://secret@api.example.com/v1')?.hasCredentials,
+    true,
   );
   assert.strictEqual(parseHttpUrl(`a://${'"'.repeat(100_000)}`), null);
   assert.ok(performance.now() - startedAt < 1_000, 'long URL inputs must be handled linearly');
@@ -42,6 +48,12 @@ assert.strictEqual(
   getDefaultProviderBaseUrl('deepseek'),
   'https://api.deepseek.com/v1',
 );
+assert.strictEqual(inferProviderMode('anthropic', ''), 'direct');
+assert.strictEqual(inferProviderMode('anthropic', 'https://api.anthropic.com/v1'), 'direct');
+assert.strictEqual(inferProviderMode('google', 'https://generativelanguage.googleapis.com/v1beta'), 'direct');
+assert.strictEqual(inferProviderMode('qwen', 'https://workspace.cn-beijing.dashscope.aliyuncs.com/compatible-mode/v1'), 'direct');
+assert.strictEqual(inferProviderMode('anthropic', 'https://relay.example.com/v1'), 'proxy');
+assert.strictEqual(inferProviderMode('custom', 'https://api.openai.com/v1'), 'proxy');
 
 assert.deepStrictEqual(
   resolveLLMEndpoint({
@@ -67,7 +79,7 @@ assert.deepStrictEqual(
   {
     provider: 'google',
     mode: 'proxy',
-    protocol: 'openai_compatible_negotiation',
+    protocol: 'chat_completions',
     hostname: 'proxy.example.com',
     pathname: '/v1/chat/completions',
   },

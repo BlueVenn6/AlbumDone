@@ -43,7 +43,8 @@ function expectedProtocol(provider) {
   for (const [provider, metadata] of Object.entries(PROVIDER_MODELS)) {
     for (const model of metadata.models) {
       const calls = [];
-      let reply = 'ok';
+      const supportsVision = modelSupportsVision(provider, model);
+      let reply = supportsVision ? 'red' : 'ok';
       const client = new LLMClient({
         provider,
         apiKey: `matrix-key-${provider}`,
@@ -58,13 +59,21 @@ function expectedProtocol(provider) {
       const result = await client.testConnection();
       assert.deepStrictEqual(result, {
         success: true,
-        mode: modelSupportsVision(provider, model) ? 'vision' : 'text',
+        mode: supportsVision ? 'vision' : 'text',
       }, `${provider}/${model} connection probe failed`);
       assert.strictEqual(calls.length, 1, `${provider}/${model} made an unexpected number of requests`);
 
       const request = calls[0];
       assert(request.url.includes(expectedProtocol(provider)), `${provider}/${model} used the wrong protocol: ${request.url}`);
       const body = JSON.parse(request.init.body);
+      const bodyText = JSON.stringify(body);
+      if (supportsVision) {
+        assert(bodyText.includes('iVBORw0KGgo'), `${provider}/${model} vision probe omitted its test image`);
+        assert(bodyText.includes('dominant color'), `${provider}/${model} vision probe omitted its image instruction`);
+      } else {
+        assert(!bodyText.includes('image_url'), `${provider}/${model} text probe sent an image`);
+        assert(!bodyText.includes('inline_data'), `${provider}/${model} text probe sent an image`);
+      }
       if (provider === 'google') {
         assert(request.url.includes(encodeURIComponent(model)), `${provider}/${model} was missing from the endpoint`);
       } else {
@@ -83,7 +92,7 @@ function expectedProtocol(provider) {
   }
 
   const probeConfig = {
-    provider: 'custom', apiKey: 'probe-test-key', model: 'text-model',
+    provider: 'custom', apiKey: 'probe-test-key', model: 'text-embedding-model',
     baseUrl: 'https://example.test/v1', supportsVision: false, mode: 'direct',
   };
   for (const reply of ['ok', ' OK. ', 'ok。', '```text\nok\n```']) {

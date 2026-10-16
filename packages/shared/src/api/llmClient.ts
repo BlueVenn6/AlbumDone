@@ -5,12 +5,12 @@ import {
   COMPAT_PROVIDER_A,
   COMPAT_PROVIDER_B,
   modelSupportsVision,
+  proxyModelSupportsVision,
   normalizeProviderModel,
   PROVIDER_MODELS,
   type LLMMessage,
   type LLMResponse,
   type ProviderConfig,
-  type LLMConnectionTestMode,
 } from '../types';
 import {
   buildAnthropicMessagesUrl,
@@ -83,7 +83,6 @@ function assertSafeLLMEndpoint(url: string): void {
 export type TestConnectionResult = {
   success: boolean;
   mode?: 'text' | 'vision';
-  resolvedProviderMode?: 'direct' | 'proxy';
   error?: string;
   category?: LLMErrorCategory;
   status?: number;
@@ -120,6 +119,15 @@ type GenerateContentPart =
   | { text: string }
   | { inline_data: { mime_type: string; data: string } };
 
+function anthropicSupportsTemperature(model: string): boolean {
+  if (/^claude-(?:mythos|fable)-/.test(model)) return false;
+  const version = /^claude-(?:opus|sonnet|haiku)-(\d+)(?:-(\d+))?/.exec(model);
+  if (!version) return true;
+  const major = Number(version[1]);
+  const minor = Number(version[2] ?? 0);
+  return major < 4 || (major === 4 && minor < 7);
+}
+
 function cleanLLMOutput(text: string): string {
   return text
     .replace(/<\|[^|>]*\|>/g, '')
@@ -137,16 +145,8 @@ function isConnectionProbeResponse(text: string, expected = 'ok'): boolean {
     .toLowerCase() === expected;
 }
 
-function anthropicSupportsTemperature(model: string): boolean {
-  if (/^claude-(?:mythos|fable)-/.test(model)) return false;
-  const version = /^claude-(?:opus|sonnet|haiku)-(\d+)(?:-(\d+))?/.exec(model);
-  if (!version) return true;
-  const major = Number(version[1]);
-  const minor = Number(version[2] ?? 0);
-  return major < 4 || (major === 4 && minor < 7);
-}
+const CONNECTION_TEST_IMAGE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAe0lEQVR4nO3PQQ0AIBDAsLPBG/+20IEIHg3Jkgno5qz9dcMFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjx2AQF2IQ9lIzkRAAAAAElFTkSuQmCC';
 
-const CONNECTION_TEST_IMAGE_BASE64 = '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';
 
 export async function testLLMConnection(
   provider: ProviderConfig['provider'],
@@ -179,7 +179,6 @@ export async function testLLMConnection(
 }
 
 export class LLMClient {
-  private resolvedProviderMode?: 'direct' | 'proxy';
   constructor(
     config: ProviderConfig,
     private transport?: LLMTransport,
@@ -208,11 +207,9 @@ export class LLMClient {
   }
 
   private supportsVision(): boolean {
-    if (this.config.provider === 'custom' && this.config.protocol) {
-      return configSupportsVision(this.config);
-    }
+    if (configSupportsVision(this.config)) return true;
     if (this.config.mode === 'proxy') {
-      return configSupportsVision(this.config);
+      return proxyModelSupportsVision(this.config.provider, this.config.model, this.config.baseUrl);
     }
 
     return modelSupportsVision(
@@ -538,55 +535,6 @@ export class LLMClient {
     };
   }
 
-  private shouldPreferResponsesForProxy(): boolean {
-    return /^(?:gpt-5|o[134](?:-|$)|claude-)/i.test(this.config.model);
-  }
-
-  private canRetryAlternateOpenAIProtocol(error: unknown): boolean {
-    return error instanceof LLMClientError
-      && Boolean(error.status && [400, 404, 405, 415, 422].includes(error.status));
-  }
-
-  private canTryAnthropicNativeProtocol(error: unknown): boolean {
-    return error instanceof LLMClientError
-      && Boolean(error.status && [400, 404, 405, 415, 422, 500, 501, 502, 503, 504].includes(error.status));
-  }
-
-  private async callOpenAIProxy(
-    messages: LLMMessage[],
-    options: LLMRequestOptions,
-  ): Promise<LLMResponse> {
-    const primary = this.shouldPreferResponsesForProxy()
-      ? () => this.callOpenAIResponses(messages, options)
-      : () => this.callOpenAICompatible(messages, options);
-    const alternate = this.shouldPreferResponsesForProxy()
-      ? () => this.callOpenAICompatible(messages, options)
-      : () => this.callOpenAIResponses(messages, options);
-
-    try {
-      const result = await primary();
-      this.resolvedProviderMode = 'proxy';
-      return result;
-    } catch (primaryError) {
-      const shouldTryAlternate = this.canRetryAlternateOpenAIProtocol(primaryError)
-        || (this.config.provider === 'anthropic' && this.canTryAnthropicNativeProtocol(primaryError));
-      if (!shouldTryAlternate) throw primaryError;
-
-      try {
-        const result = await alternate();
-        this.resolvedProviderMode = 'proxy';
-        return result;
-      } catch (alternateError) {
-        if (this.config.provider !== 'anthropic' || !this.canTryAnthropicNativeProtocol(alternateError)) {
-          throw alternateError;
-        }
-        const result = await this.callAnthropic(messages, options);
-        this.resolvedProviderMode = 'direct';
-        return result;
-      }
-    }
-  }
-
   private buildResponsesInput(messages: LLMMessage[]): Array<Record<string, unknown>> {
     return messages.map((msg) => {
       const content = typeof msg.content === 'string'
@@ -770,7 +718,7 @@ export class LLMClient {
 
     if (!resp.ok) {
       const text = await resp.text();
-      if (!isOfficialAnthropic && !this.config.protocol && [400, 401, 403, 404, 405].includes(resp.status)) {
+      if (!isOfficialAnthropic && [400, 401, 403, 404, 405].includes(resp.status)) {
         return this.callOpenAICompatible(messages, options);
       }
       throw createLLMClientError({
@@ -942,18 +890,8 @@ export class LLMClient {
   }
 
   async chat(messages: LLMMessage[], options: LLMRequestOptions = {}): Promise<LLMResponse> {
-    if (this.config.provider === 'custom' && this.config.protocol) {
-      if (!this.config.baseUrl?.trim()) throw new Error('Base URL is required.');
-      switch (this.config.protocol) {
-        case 'responses': return this.callOpenAIResponses(messages, options);
-        case 'chat_completions': return this.callOpenAICompatible(messages, options);
-        case 'anthropic_messages': return this.callAnthropic(messages, options);
-        case 'google_generate_content': return this.callGenerateContent(messages, options);
-        default: throw new Error('Unsupported custom endpoint protocol.');
-      }
-    }
     if (this.config.mode === 'proxy') {
-      return this.callOpenAIProxy(messages, options);
+      return this.callOpenAICompatible(messages, options);
     }
     if (this.shouldUseResponsesApi()) {
       return this.callOpenAIResponses(messages, options);
@@ -969,7 +907,7 @@ export class LLMClient {
     }
   }
 
-  async testConnection(testMode?: LLMConnectionTestMode): Promise<TestConnectionResult> {
+  async testConnection(): Promise<TestConnectionResult> {
     const isKimiK2 =
       this.config.provider === COMPAT_PROVIDER_A && this.config.model?.startsWith(COMPAT_MODEL_A_K2_PREFIX);
     const isMiniMaxM3 =
@@ -977,22 +915,16 @@ export class LLMClient {
     const isReasoningVisionModel = this.config.provider === COMPAT_PROVIDER_B
       && COMPAT_REASONING_VISION_PATTERN.test(this.config.model);
     const maxTokens = isKimiK2 ? 2048 : isMiniMaxM3 || isReasoningVisionModel ? 512 : 32;
-    const timeoutMs = isMiniMaxM3 ? 60000 : 20000;
-    const shouldTestVision = testMode ? testMode === 'vision' : this.supportsVision();
-    const expectedReply = testMode === 'vision' ? 'red' : 'ok';
-    const testImage = testMode === 'vision'
-      ? 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAe0lEQVR4nO3PQQ0AIBDAsLPBG/+20IEIHg3Jkgno5qz9dcMFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjx2AQF2IQ9lIzkRAAAAAElFTkSuQmCC'
-      : `data:image/jpeg;base64,${CONNECTION_TEST_IMAGE_BASE64}`;
+    const timeoutMs = this.config.mode === 'proxy' || isMiniMaxM3 ? 60000 : 20000;
+    const shouldTestVision = this.supportsVision();
+    const expectedReply = shouldTestVision ? 'red' : 'ok';
 
     try {
       const response = shouldTestVision
-        ? await this.chat(
-          [{ role: 'user', content: [
-            { type: 'image_url', image_url: { url: testImage, detail: 'high' } },
-            { type: 'text', text: testMode === 'vision'
-              ? 'What is the dominant color of this image? Reply with just the English color name.'
-              : 'This is an application-generated connection test image. Reply with just "ok".' },
-          ] }],
+        ? await this.chatWithImage(
+          'What is the dominant color of this image? Reply with just the English color name.',
+          CONNECTION_TEST_IMAGE_BASE64,
+          'image/png',
           { maxTokens, temperature: 0, timeoutMs },
         )
         : await this.chat(
@@ -1004,9 +936,6 @@ export class LLMClient {
         return {
           success: true,
           mode: shouldTestVision ? 'vision' : 'text',
-          ...(this.resolvedProviderMode && this.resolvedProviderMode !== this.config.mode
-            ? { resolvedProviderMode: this.resolvedProviderMode }
-            : {}),
         };
       }
       return {

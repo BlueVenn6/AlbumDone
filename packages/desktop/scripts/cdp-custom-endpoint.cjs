@@ -53,83 +53,51 @@ process.on('beforeExit', code => { if (!code && !completed) process.exitCode = 1
         input.dispatchEvent(new Event('input', { bubbles: true }));
       })()`);
     };
-    const chooseProtocol = async protocol => {
-      await evaluate(`(() => {
-        const select = document.querySelector('select[aria-label="Request protocol"]');
-        if (!select || select.disabled) throw new Error('Protocol unavailable');
-        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, ${JSON.stringify(protocol)});
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-      })()`);
-    };
     const savedConfig = () => evaluate("JSON.parse(localStorage.getItem('photo-manager-settings')).state.providers.custom");
-    const statusText = () => evaluate("document.querySelector('[data-testid=custom-test-status]').innerText");
     await setInput(0, 'synthetic-custom-ui-key');
+    await setInput(1, origin + '/v1');
     await setInput(2, 'customer-alias');
-    const protocols = {
-      responses: '/v1/responses', chat_completions: '/v1/chat/completions',
-      anthropic_messages: '/v1/messages', google_generate_content: '/v1beta/models/customer-alias:generateContent',
-    };
-    for (const [protocol, expectedPath] of Object.entries(protocols)) {
-      await setInput(1, origin + (protocol === 'google_generate_content' ? '/v1beta' : '/v1'));
-      await chooseProtocol(protocol);
-      assert((await statusText()).includes('Retest required'));
-      assert(await click(['Test text'], true));
-      await waitFor("document.body.innerText.includes('Text test passed')");
-      assert.equal(requests.at(-1).path, expectedPath);
-      assert.equal(requests.at(-1).hasImage, false);
-      const textOnly = await savedConfig();
-      assert.equal(textOnly.supportsVision, false);
-      assert.equal(textOnly.connectionTests.text, true);
-      assert(!Object.hasOwn(textOnly, 'apiKey'));
-      assert(await click(['Test image'], true));
-      await waitFor("document.body.innerText.includes('Image test passed')");
-      assert.equal(requests.at(-1).path, expectedPath);
-      assert.equal(requests.at(-1).hasImage, true);
-      const verified = await savedConfig();
-      assert.equal(verified.protocol, protocol);
-      assert.equal(verified.model, 'customer-alias');
-      assert.equal(verified.supportsVision, true);
-      const runtime = await evaluate(`window.electronAPI.llm.chatWithImage(${JSON.stringify({
-        ...verified, prompt: 'Describe this synthetic image', imageBase64: 'AA==', mimeType: 'image/png',
-      })})`);
-      assert.equal(runtime.content, 'runtime-photo-result');
-      assert.equal(requests.at(-1).path, expectedPath);
-    }
+    assert.equal(await evaluate("document.querySelector('select[aria-label=\"Request protocol\"]')"), null);
+    assert.equal(await evaluate("document.body.innerText.includes('Responses API') || document.body.innerText.includes('Chat Completions API')"), false);
+    assert(await click(['Test Connection'], true));
+    await waitFor("document.body.innerText.includes('Connection successful')");
+    assert.equal(requests.at(-1).path, '/v1/chat/completions');
+    assert.equal(requests.at(-1).hasImage, true);
+    const verified = await savedConfig();
+    assert.equal(verified.model, 'customer-alias');
+    assert.equal(verified.mode, 'proxy');
+    assert.equal(verified.supportsVision, true);
+    assert(!Object.hasOwn(verified, 'protocol'));
+    assert(!Object.hasOwn(verified, 'connectionTests'));
+    assert(!Object.hasOwn(verified, 'apiKey'));
+    const runtime = await evaluate(`window.electronAPI.llm.chatWithImage(${JSON.stringify({
+      ...verified, prompt: 'Describe this synthetic image', imageBase64: 'AA==', mimeType: 'image/png',
+    })})`);
+    assert.equal(runtime.content, 'runtime-photo-result');
+    assert.equal(requests.at(-1).path, '/v1/chat/completions');
     await send('Page.reload', { ignoreCache: true });
     await waitFor("document.body.innerText.includes('Custom Endpoint')");
     assert(await click(['Custom Endpoint']));
-    await waitFor("document.querySelector('[data-testid=custom-test-status]')?.innerText.includes('Test image: Passed')");
-    assert.equal(await evaluate("document.querySelector('select[aria-label=\"Request protocol\"]').value"), 'google_generate_content');
-    await setInput(2, 'changed-alias');
-    assert(!(await statusText()).includes('Passed'));
-    await setInput(2, 'customer-alias');
-    assert(!(await statusText()).includes('Passed'), 'Editing and restoring the model must still require retesting.');
-    assert(await click(['Test image'], true));
-    await waitFor("document.body.innerText.includes('Image test passed')");
     await setInput(0, 'synthetic-custom-ui-key-replaced');
-    assert(!(await statusText()).includes('Passed'), 'Key changes did not invalidate previous tests.');
     const savedKeyStatus = await evaluate("window.electronAPI.settings.getApiKeyStatus('custom')");
-    assert(await click(['Test text'], true));
+    assert(await click(['Test Connection'], true));
     await waitFor("document.body.innerText.includes('API Key') && !document.querySelector('input[type=password]').disabled");
     assert.deepEqual(await evaluate("window.electronAPI.settings.getApiKeyStatus('custom')"), savedKeyStatus,
       'A failed test overwrote the previously saved secure Key.');
-    assert(!(await statusText()).includes('Passed'), 'A failed replacement Key restored old successful test badges.');
     assert.equal((await savedConfig()).model, 'customer-alias', 'A failed test changed the saved model.');
     await setInput(0, 'synthetic-custom-ui-key');
     responseMode = 'wrong-color';
-    assert(await click(['Test image'], true));
-    await waitFor("document.body.innerText.includes('Request') || document.querySelector('[data-testid=custom-test-status]')?.innerText.includes('Retest required')");
-    await waitFor("JSON.parse(localStorage.getItem('photo-manager-settings')).state.providers.custom.connectionTests?.vision === false");
-    assert.equal((await savedConfig()).supportsVision, false);
+    assert(await click(['Test Connection'], true));
+    await waitFor("!document.querySelector('input[type=password]').disabled");
+    assert.equal((await savedConfig()).supportsVision, true, 'A failed retest changed the saved route.');
     responseMode = 'valid';
-    delayMs = 10000;
-    assert(await click(['Test image'], true));
+    delayMs = 1000;
+    assert(await click(['Test Connection'], true));
     await waitFor("document.querySelector('input[type=password]').disabled");
-    assert.equal(await evaluate("document.querySelector('select[aria-label=\"Request protocol\"]').disabled"), true);
-    await waitFor("document.body.innerText.includes('Image test passed')");
-    const result = { fourProtocols: true, separateTextAndImageTests: true, imageColorValidated: true,
-      arbitraryModelAliasPreserved: true, runtimeUsesTestedProtocol: true, persistedAfterReload: true,
-      modelAndKeyEditsRequireRetest: true, failedImageTestDisablesVision: true, fieldsLockedDuringTest: true,
+    await waitFor("document.body.innerText.includes('Connection successful')");
+    const result = { protocolPickerRemoved: true, singleImageConnectionTest: true, imageColorValidated: true,
+      chatCompletionsRelayPath: true, arbitraryModelAliasPreserved: true, runtimeUsesTestedRoute: true,
+      persistedAfterReload: true, fieldsLockedDuringTest: true,
       failedTestPreservesSavedSecureKey: true,
       requestCount: requests.length,
       scope: 'Production renderer/preload/main/shared client; local HTTP service and isolated in-memory test credentials; not a packaged artifact or live vendor account.' };

@@ -29,24 +29,6 @@ const CURRENT_MODEL_C_FLASH = `${COMPAT_MODEL_C_PREFIX}-flash`;
 const CURRENT_MODEL_C_PRO = `${COMPAT_MODEL_C_PREFIX}-v4-pro`;
 
 export type ProviderMode = 'direct' | 'proxy';
-
-export const CUSTOM_LLM_PROTOCOLS = [
-  'responses', 'chat_completions', 'anthropic_messages', 'google_generate_content',
-] as const;
-export type CustomLLMProtocol = typeof CUSTOM_LLM_PROTOCOLS[number];
-export const CUSTOM_LLM_PROTOCOL_LABELS: Record<CustomLLMProtocol, string> = {
-  responses: 'OpenAI Responses',
-  chat_completions: 'OpenAI Chat Completions',
-  anthropic_messages: 'Claude Messages',
-  google_generate_content: 'Gemini generateContent',
-};
-export type LLMConnectionTestMode = 'text' | 'vision';
-export type ProviderConnectionTests = {
-  signature: string;
-  text?: boolean;
-  vision?: boolean;
-};
-
 export type ProviderConfig = {
   provider: LLMProvider;
   apiKey?: string;
@@ -55,9 +37,31 @@ export type ProviderConfig = {
   model: string;
   supportsVision: boolean;
   mode?: ProviderMode;
-  protocol?: CustomLLMProtocol;
-  connectionTests?: ProviderConnectionTests;
 };
+
+const OFFICIAL_PROVIDER_HOSTS: Partial<Record<LLMProvider, readonly string[]>> = {
+  openai: ['api.openai.com'],
+  anthropic: ['api.anthropic.com'],
+  google: ['generativelanguage.googleapis.com'],
+  moonshot: ['api.moonshot.cn'],
+  zhipu: ['open.bigmodel.cn'],
+  qwen: ['dashscope.aliyuncs.com', 'maas.aliyuncs.com'],
+  minimax: ['api.minimaxi.com'],
+  deepseek: ['api.deepseek.com'],
+};
+
+export function isOfficialProviderBaseUrl(provider: LLMProvider, baseUrl?: string): boolean {
+  if (!baseUrl?.trim()) return true;
+  const hostname = getHttpUrlHostname(baseUrl);
+  if (!hostname) return false;
+  return OFFICIAL_PROVIDER_HOSTS[provider]?.some((host) =>
+    hostname === host || (provider === 'qwen' && hostname.endsWith(`.${host}`)),
+  ) ?? false;
+}
+
+export function inferProviderMode(provider: LLMProvider, baseUrl?: string): ProviderMode {
+  return provider === 'custom' || !isOfficialProviderBaseUrl(provider, baseUrl) ? 'proxy' : 'direct';
+}
 
 export type LLMMessage = {
   role: 'user' | 'assistant' | 'system';
@@ -76,22 +80,14 @@ export type LLMResponse = {
 export const PROVIDER_MODELS = {
   openai: {
     name: 'OpenAI',
-    models: ['gpt-5.5', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4o', 'gpt-4o-mini'],
+    // Model access differs by account and relay. The exact model ID is entered
+    // by the customer instead of presenting unverified aliases as official IDs.
+    models: [],
     supportsVision: true,
   },
   anthropic: {
     name: 'Anthropic',
-    models: [
-      'claude-sonnet-5-5',
-      'claude-opus-5-5',
-      'claude-haiku-5-5',
-      'claude-sonnet-5',
-      'claude-opus-4-8',
-      'claude-opus-4-7',
-      'claude-opus-4-6',
-      'claude-sonnet-4-6',
-      'claude-haiku-4-5',
-    ],
+    models: [],
     supportsVision: true,
   },
   [GENERATE_CONTENT_PROVIDER]: {
@@ -157,22 +153,8 @@ export const PROVIDER_MODELS = {
 
 export function normalizeProviderModel(provider: LLMProvider, model: string): string {
   const trimmedModel = model.trim();
-  if (provider === 'anthropic') {
-    const retiredModels: Record<string, string> = {
-      'claude-3-5-sonnet-20240620': 'claude-sonnet-5-5',
-      'claude-3-5-sonnet-20241022': 'claude-sonnet-5-5',
-      'claude-3-5-sonnet-latest': 'claude-sonnet-5-5',
-      'claude-3-7-sonnet-20250219': 'claude-sonnet-5-5',
-      'claude-3-7-sonnet-latest': 'claude-sonnet-5-5',
-      'claude-sonnet-4-20250514': 'claude-sonnet-5-5',
-      'claude-opus-4-20250514': 'claude-opus-4-8',
-      'claude-opus-4-1-20250805': 'claude-opus-4-8',
-      'claude-3-5-haiku-20241022': 'claude-haiku-4-5-20251001',
-      'claude-3-5-haiku-latest': 'claude-haiku-4-5-20251001',
-      'claude-3-haiku-20240307': 'claude-haiku-4-5-20251001',
-    };
-    return retiredModels[trimmedModel] ?? trimmedModel;
-  }
+  // Provider and relay model IDs are opaque. Preserve the customer's exact ID;
+  // replacing it can silently route requests to a model their account does not have.
   if (provider === 'minimax' && trimmedModel === 'MiniMax-VL-01') {
     return 'MiniMax-M3';
   }
@@ -232,10 +214,7 @@ export function modelSupportsVision(
   }
   if (provider === 'custom') {
     const normalizedModel = model.toLowerCase();
-    if (NON_VISION_MODEL_PATTERN.test(normalizedModel)) {
-      return false;
-    }
-    return VISION_MODEL_PATTERN.test(normalizedModel);
+    return Boolean(normalizedModel) && !NON_VISION_MODEL_PATTERN.test(normalizedModel);
   }
 
   if (provider === 'anthropic') {
@@ -275,6 +254,9 @@ export function proxyModelSupportsVision(
   if (NON_VISION_MODEL_PATTERN.test(normalizedModel)) {
     return false;
   }
+  if (provider === 'custom') {
+    return Boolean(normalizedModel);
+  }
   if (VISION_MODELS[provider]?.includes(model)) {
     return true;
   }
@@ -283,48 +265,10 @@ export function proxyModelSupportsVision(
 
 export function configSupportsVision(config?: ProviderConfig): boolean {
   if (!config) return false;
-  if (config.provider === 'custom' && config.protocol) {
-    return getValidConnectionTests(config)?.vision === true;
-  }
   if (config.mode === 'proxy') {
     return proxyModelSupportsVision(config.provider, config.model, config.baseUrl);
   }
   return modelSupportsVision(config.provider, config.model, config.baseUrl);
-}
-
-// Bind test results to the exact route without persisting credentials.
-// Forms discard this record whenever the customer edits their API key.
-export function getProviderConfigSignature(config: ProviderConfig): string {
-  return JSON.stringify([
-    config.provider, config.baseUrl?.trim() ?? '', config.model.trim(),
-    config.mode ?? 'direct', config.protocol ?? '',
-  ]);
-}
-
-export function getValidConnectionTests(config?: ProviderConfig): ProviderConnectionTests | undefined {
-  if (!config?.connectionTests || config.connectionTests.signature !== getProviderConfigSignature(config)) {
-    return undefined;
-  }
-  const tests = config.connectionTests;
-  return {
-    signature: tests.signature,
-    ...(typeof tests.text === 'boolean' ? { text: tests.text } : {}),
-    ...(typeof tests.vision === 'boolean' ? { vision: tests.vision } : {}),
-  };
-}
-
-export function withConnectionTestResult(
-  config: ProviderConfig, mode: LLMConnectionTestMode, success: boolean,
-): ProviderConfig {
-  const next = {
-    ...config,
-    connectionTests: {
-      ...getValidConnectionTests(config),
-      signature: getProviderConfigSignature(config),
-      [mode]: success,
-    },
-  };
-  return { ...next, supportsVision: configSupportsVision(next) };
 }
 
 export type ResolvedProviderRoute = {

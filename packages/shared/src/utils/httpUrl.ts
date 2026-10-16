@@ -3,6 +3,7 @@ export type ParsedHttpUrl = {
   pathname: string;
   search: string;
   hostname: string;
+  hasCredentials: boolean;
 };
 
 export function trimTrailingSlashes(value: string): string {
@@ -53,12 +54,15 @@ function isValidPort(value: string): boolean {
   return port <= 65535;
 }
 
-function parseAuthority(authority: string): { hostname: string; hostAndPort: string } | null {
+function parseAuthority(
+  authority: string,
+): { hostname: string; hostAndPort: string; hasCredentials: boolean } | null {
   if (!authority || hasInvalidAuthorityCharacter(authority)) {
     return null;
   }
 
   const credentialsEnd = authority.lastIndexOf('@');
+  const hasCredentials = credentialsEnd >= 0;
   const hostAndPort = authority.slice(credentialsEnd + 1);
   if (!hostAndPort) {
     return null;
@@ -77,6 +81,7 @@ function parseAuthority(authority: string): { hostname: string; hostAndPort: str
     return {
       hostname,
       hostAndPort: `[${hostname}]${portSuffix}`,
+      hasCredentials,
     };
   }
 
@@ -93,6 +98,7 @@ function parseAuthority(authority: string): { hostname: string; hostAndPort: str
   return {
     hostname,
     hostAndPort: `${hostname}${portSuffix}`,
+    hasCredentials,
   };
 }
 
@@ -155,6 +161,7 @@ export function parseHttpUrl(rawUrl: string): ParsedHttpUrl | null {
     pathname,
     search,
     hostname: authority.hostname,
+    hasCredentials: authority.hasCredentials,
   };
 }
 

@@ -1,7 +1,5 @@
 {
   "common": {
-    "permanentDelete": "永久刪除並釋放空間",
-    "deletedStorage": "已永久刪除原檔案 {{originalMB}} MB，清理快取 {{cacheMB}} MB。",
     "back": "返回",
     "cancel": "取消",
     "done": "完成",
@@ -14,11 +12,16 @@
     "remove": "移除",
     "add": "新增",
     "close": "關閉",
+    "zoomIn": "放大",
+    "zoomOut": "縮小",
+    "resetZoom": "重設縮放",
+    "fit": "符合螢幕",
     "retry": "重試",
     "undo": "復原",
     "keep": "保留",
     "delete": "刪除",
     "deleting": "刪除中…",
+    "androidDeleteBatchNotice": "Android 將分 {{count}} 批要求系統確認刪除。請保持此頁面開啟，直到刪除完成。",
     "notSet": "未設定",
     "unknownError": "未知錯誤",
     "confirmDeleteCount": "確認刪除 {{count}} 項？",
@@ -117,8 +120,6 @@
     }
   },
   "yearInReview": {
-    "preview": "年度回顧圖片一覽",
-    "previewFailed": "圖片預覽載入失敗，請重試或開啟已儲存的圖片。",
     "momentTitle": "{{month}} 代表照片",
     "reasonsSeparator": "，"
   },
@@ -209,6 +210,8 @@
     "kept": "已保留",
     "deleted": "已刪除",
     "progress": "{{current}} / {{total}}",
+    "batchProgress": "本批次：{{current}} / {{total}}",
+    "albumProgress": "整本相簿已檢視：{{reviewed}} / {{total}} · 剩餘 {{remaining}} 張",
     "reviewedProgress": "{{reviewed}}/{{total}} 已檢視",
     "batchSize": "本輪處理數量",
     "batchAll": "全部",
@@ -340,35 +343,17 @@
   "settings": {
     "title": "設定",
     "apiConfig": {
-      "protocolLabel": "請求協議",
       "customBaseUrlLabel": "API 位址（必填）",
-      "textTest": "測試文字",
-      "imageTest": "測試圖片",
-      "passed": "已通過",
-      "retestRequired": "需要重新測試",
-      "textTestSuccess": "文字測試已通過",
-      "imageTestSuccess": "圖片測試已通過",
-      "customTestHint": "請填寫服務商提供的準確模型名和 API 位址。圖片測試傳送應用產生的色塊圖；位址、模型、協議或 Key 改變後需要重新測試。",
       "title": "API 設定",
       "description": "API Key 儲存在裝置本機加密儲存中（iOS/macOS 使用 Keychain，Android 使用 Keystore，Windows 使用 Credential Manager）。所有請求都會從你的裝置直接傳送至服務商，App 不持有任何 Key。",
       "keyLabel": "API Key",
       "baseUrlLabel": "Base URL（選填）",
       "qwenBaseUrlLabel": "業務空間 Base URL（必填）",
       "modelLabel": "模型",
-      "modeLabel": "API 類型",
-      "directMode": "原生 API",
-      "proxyMode": "OpenAI 中轉",
-      "cloudCompatibleMode": "雲端 OpenAI 相容 API",
-      "responsesMode": "Responses API",
-      "chatCompletionsMode": "Chat Completions API",
-      "anthropicMessagesMode": "Anthropic Messages API",
-      "negotiatedCompatibleMode": "OpenAI 相容協定自動協商",
-      "officialCompatibleMode": "官方相容 API",
       "testBtn": "測試連線",
       "testing": "測試中…",
       "testSuccess": "連線成功",
       "testFailed": "連線測試失敗",
-      "textTested": "已通過文字請求測試",
       "visionTested": "已通過圖片請求測試",
       "configured": "已設定",
       "customModel": "自訂…",
@@ -409,6 +394,7 @@
         "timeout": "網路請求逾時，請檢查網路或代理服務是否可連線。",
         "network": "網路請求失敗，請檢查網路連線。",
         "emptyResponse": "模型返回為空或不完整。",
+        "invalidResponse": "模型沒有返回預期的連線測試結果。",
         "unknown": "模型連線失敗，請檢查設定後重試。"
       }
     },
@@ -462,7 +448,10 @@
     "photoLoadFailed": "照片載入失敗：{{message}}",
     "permissionRequestFailed": "請求相簿權限失敗：{{message}}",
     "missingPhotoPermission": "缺少相簿讀取權限，無法載入裝置照片。",
-    "checkPhotoPermission": "相簿載入失敗：請檢查照片存取權限。"
+    "checkPhotoPermission": "相簿載入失敗：請檢查照片存取權限。",
+    "limitedPhotoAccess": "目前只允許存取部分照片，顯示和整理的數量不是裝置完整相簿。請重新授權全部照片。",
+    "allowAllPhotos": "允許全部照片",
+    "accessiblePhotoCount": "目前可存取 {{count}} 張照片"
   },
   "photoGrid": {
     "screenshotBadge": "截圖"

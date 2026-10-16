@@ -1,7 +1,5 @@
 {
   "common": {
-    "permanentDelete": "Delete permanently and release storage",
-    "deletedStorage": "Permanently removed {{originalMB}} MB of originals and {{cacheMB}} MB of app caches.",
     "back": "Back",
     "cancel": "Cancel",
     "done": "Done",
@@ -14,11 +12,16 @@
     "remove": "Remove",
     "add": "Add",
     "close": "Close",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "resetZoom": "Reset zoom",
+    "fit": "Fit",
     "retry": "Retry",
     "undo": "Undo",
     "keep": "Keep",
     "delete": "Delete",
     "deleting": "Deleting…",
+    "androidDeleteBatchNotice": "Android will request system deletion confirmation in {{count}} batches. Keep this screen open until deletion finishes.",
     "notSet": "Not set",
     "unknownError": "Unknown error",
     "confirmDeleteCount": "Delete {{count}} item?",
@@ -117,8 +120,6 @@
     }
   },
   "yearInReview": {
-    "preview": "Year in Review photo collage",
-    "previewFailed": "The photo preview could not be loaded. Retry or open the saved image.",
     "momentTitle": "{{month}} representative photo",
     "reasonsSeparator": ", "
   },
@@ -209,6 +210,8 @@
     "kept": "Kept",
     "deleted": "Deleted",
     "progress": "{{current}} / {{total}}",
+    "batchProgress": "This batch: {{current}} / {{total}}",
+    "albumProgress": "Album reviewed: {{reviewed}} / {{total}} · {{remaining}} remaining",
     "reviewedProgress": "{{reviewed}}/{{total}} reviewed",
     "batchSize": "Batch size",
     "batchAll": "All",
@@ -340,35 +343,17 @@
   "settings": {
     "title": "Settings",
     "apiConfig": {
-      "protocolLabel": "Request protocol",
       "customBaseUrlLabel": "API address (required)",
-      "textTest": "Test text",
-      "imageTest": "Test image",
-      "passed": "Passed",
-      "retestRequired": "Retest required",
-      "textTestSuccess": "Text test passed",
-      "imageTestSuccess": "Image test passed",
-      "customTestHint": "Use the exact model ID and API address supplied by your provider. Image testing sends an app-generated color image. Address, model, protocol or Key changes require retesting.",
       "title": "API Configuration",
       "description": "Your API keys are stored locally in system secure storage (Keychain / Credential Manager). All requests go directly from your device to the provider.",
       "keyLabel": "API Key",
       "baseUrlLabel": "Base URL (optional)",
       "qwenBaseUrlLabel": "Workspace Base URL (required)",
       "modelLabel": "Model",
-      "modeLabel": "API Type",
-      "directMode": "Direct API",
-      "proxyMode": "OpenAI-compatible proxy",
-      "cloudCompatibleMode": "Cloud OpenAI-compatible API",
-      "responsesMode": "Responses API",
-      "chatCompletionsMode": "Chat Completions API",
-      "anthropicMessagesMode": "Anthropic Messages API",
-      "negotiatedCompatibleMode": "OpenAI-compatible protocol negotiation",
-      "officialCompatibleMode": "Official compatible API",
       "testBtn": "Test Connection",
       "testing": "Testing…",
       "testSuccess": "Connection successful",
       "testFailed": "Connection test failed",
-      "textTested": "text request tested",
       "visionTested": "image request tested",
       "configured": "Configured",
       "customModel": "Custom…",
@@ -409,6 +394,7 @@
         "timeout": "Network request timed out. Check the network or proxy service.",
         "network": "Network request failed. Check the network connection.",
         "emptyResponse": "Model returned an empty or incomplete response.",
+        "invalidResponse": "Model did not return the expected connection-test response.",
         "unknown": "Model connection failed. Check the configuration and try again."
       }
     },
@@ -462,7 +448,10 @@
     "photoLoadFailed": "Photo loading failed: {{message}}",
     "permissionRequestFailed": "Photo permission request failed: {{message}}",
     "missingPhotoPermission": "Photo library permission is required to load device photos.",
-    "checkPhotoPermission": "Album loading failed. Check photo access permission."
+    "checkPhotoPermission": "Album loading failed. Check photo access permission.",
+    "limitedPhotoAccess": "Only some photos are currently allowed. Counts and cleanup cover the accessible subset, not the full device library. Grant access to all photos to continue.",
+    "allowAllPhotos": "Allow all photos",
+    "accessiblePhotoCount": "{{count}} accessible photos"
   },
   "photoGrid": {
     "screenshotBadge": "Screenshot"

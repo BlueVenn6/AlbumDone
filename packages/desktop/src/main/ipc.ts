@@ -8,12 +8,8 @@ import {
   computeVisualHashSignature,
   detectScreenshotCandidate,
   executeInstruction,
+  inferProviderMode,
   modelSupportsVision,
-  CUSTOM_LLM_PROTOCOLS,
-  getValidConnectionTests,
-  type CustomLLMProtocol,
-  type LLMConnectionTestMode,
-  type ProviderConnectionTests,
   type LLMMessage,
   type LLMProvider,
   type ProviderConfig,
@@ -261,10 +257,6 @@ function assertLLMProvider(value: unknown): LLMProvider {
     throw new Error('Invalid provider name.');
   }
   return provider;
-}
-
-function assertProviderMode(value: unknown): ProviderMode {
-  return value === 'proxy' ? 'proxy' : 'direct';
 }
 
 function assertLlmMessages(value: unknown): LLMMessage[] {
@@ -2864,25 +2856,15 @@ export function setupIpcHandlers(): void {
     model: string;
     supportsVision: boolean;
     mode: ProviderMode;
-    protocol?: CustomLLMProtocol | undefined;
-    connectionTests?: ProviderConnectionTests | undefined;
   }): ProviderConfig {
-    if (input.protocol && (input.provider !== 'custom' || !CUSTOM_LLM_PROTOCOLS.includes(input.protocol))) {
-      throw new Error('Unsupported custom endpoint protocol.');
-    }
-    const config: ProviderConfig = {
+    return {
       provider: input.provider,
       apiKey: input.apiKey,
       model: input.model,
       supportsVision: input.supportsVision,
       mode: input.mode,
-      ...(input.protocol ? { protocol: input.protocol } : {}),
-      ...(input.connectionTests ? { connectionTests: input.connectionTests } : {}),
       ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
     };
-    const connectionTests = getValidConnectionTests(config);
-    const { connectionTests: _connectionTests, ...safeConfig } = config;
-    return { ...safeConfig, ...(connectionTests ? { connectionTests } : {}) };
   }
 
   safeHandle('settings:getApiKeyStatus', async (_event, provider: string) => {
@@ -3334,9 +3316,6 @@ export function setupIpcHandlers(): void {
         supportsVision?: boolean;
         mode?: ProviderMode;
         apiKey?: string;
-        protocol?: CustomLLMProtocol;
-        connectionTests?: ProviderConnectionTests;
-        testMode?: LLMConnectionTestMode;
       },
     ) => {
       if (!params || typeof params !== 'object') {
@@ -3345,10 +3324,7 @@ export function setupIpcHandlers(): void {
       const provider = assertLLMProvider(params.provider);
       const model = assertString(params.model, 'model');
       const baseUrl = assertSafeEndpointUrl(params.baseUrl);
-      const mode = assertProviderMode(params.mode);
-      if (params.testMode && !['text', 'vision'].includes(params.testMode)) {
-        throw new Error('Unsupported connection test mode.');
-      }
+      const mode = inferProviderMode(provider, baseUrl);
       const temporaryApiKey = typeof params.apiKey === 'string' ? params.apiKey.trim() : '';
       const storedApiKey = temporaryApiKey || await readStoredApiKey(provider);
       if (!storedApiKey?.trim()) {
@@ -3360,15 +3336,13 @@ export function setupIpcHandlers(): void {
       const client = new LLMClient(createMainProviderConfig({
         provider,
         apiKey: storedApiKey,
-        protocol: params.protocol,
-        connectionTests: params.connectionTests,
         baseUrl,
         model,
         supportsVision,
         mode,
       }));
       return sanitizeIpcPayload(await raceWithTimeout(
-        client.testConnection(params.testMode),
+        client.testConnection(),
         TEST_CONNECTION_TIMEOUT_MS,
         'API connection test exceeded 25 seconds.',
       ));
@@ -3385,8 +3359,6 @@ export function setupIpcHandlers(): void {
         model: string;
         supportsVision?: boolean;
         mode?: ProviderMode;
-        protocol?: CustomLLMProtocol;
-        connectionTests?: ProviderConnectionTests;
         messages: LLMMessage[];
         options?: { temperature?: number; maxTokens?: number };
       },
@@ -3397,7 +3369,7 @@ export function setupIpcHandlers(): void {
       const provider = assertLLMProvider(params.provider);
       const model = assertString(params.model, 'model');
       const baseUrl = assertSafeEndpointUrl(params.baseUrl);
-      const mode = assertProviderMode(params.mode);
+      const mode = inferProviderMode(provider, baseUrl);
       const apiKey = await readStoredApiKey(provider);
       if (!apiKey?.trim()) {
         throw new Error('API key is not configured. Complete setup in Settings first.');
@@ -3405,8 +3377,6 @@ export function setupIpcHandlers(): void {
       const client = new LLMClient(createMainProviderConfig({
         provider,
         apiKey,
-        protocol: params.protocol,
-        connectionTests: params.connectionTests,
         baseUrl,
         model,
         supportsVision: params.supportsVision ?? modelSupportsVision(provider, model, baseUrl),
@@ -3426,8 +3396,6 @@ export function setupIpcHandlers(): void {
         model: string;
         supportsVision?: boolean;
         mode?: ProviderMode;
-        protocol?: CustomLLMProtocol;
-        connectionTests?: ProviderConnectionTests;
         prompt: string;
         imageBase64: string;
         mimeType: string;
@@ -3440,7 +3408,7 @@ export function setupIpcHandlers(): void {
       const provider = assertLLMProvider(params.provider);
       const model = assertString(params.model, 'model');
       const baseUrl = assertSafeEndpointUrl(params.baseUrl);
-      const mode = assertProviderMode(params.mode);
+      const mode = inferProviderMode(provider, baseUrl);
       const prompt = assertString(params.prompt, 'prompt');
       const imageBase64 = assertString(params.imageBase64, 'imageBase64');
       const mimeType = assertString(params.mimeType, 'mimeType');
@@ -3454,8 +3422,6 @@ export function setupIpcHandlers(): void {
       const client = new LLMClient(createMainProviderConfig({
         provider,
         apiKey,
-        protocol: params.protocol,
-        connectionTests: params.connectionTests,
         baseUrl,
         model,
         supportsVision: params.supportsVision ?? true,
@@ -3475,8 +3441,6 @@ export function setupIpcHandlers(): void {
         model: string;
         supportsVision?: boolean;
         mode?: ProviderMode;
-        protocol?: CustomLLMProtocol;
-        connectionTests?: ProviderConnectionTests;
         instruction: string;
         imageBase64: string;
         mimeType: string;
@@ -3490,7 +3454,7 @@ export function setupIpcHandlers(): void {
       const provider = assertLLMProvider(params.provider);
       const model = assertString(params.model, 'model');
       const baseUrl = assertSafeEndpointUrl(params.baseUrl);
-      const mode = assertProviderMode(params.mode);
+      const mode = inferProviderMode(provider, baseUrl);
       const instruction = assertString(params.instruction, 'instruction');
       const imageBase64 = assertString(params.imageBase64, 'imageBase64');
       const mimeType = assertString(params.mimeType, 'mimeType');
@@ -3511,8 +3475,6 @@ export function setupIpcHandlers(): void {
       const client = new LLMClient(createMainProviderConfig({
         provider,
         apiKey,
-        protocol: params.protocol,
-        connectionTests: params.connectionTests,
         baseUrl,
         model,
         supportsVision: params.supportsVision ?? true,

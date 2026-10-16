@@ -44,8 +44,7 @@ export type LLMEndpointProtocol =
   | 'responses'
   | 'chat_completions'
   | 'anthropic_messages'
-  | 'google_generate_content'
-  | 'openai_compatible_negotiation';
+  | 'google_generate_content';
 
 export type ResolvedLLMEndpoint = {
   provider: LLMProvider;
@@ -190,37 +189,16 @@ export function buildGenerateContentUrl(
 }
 
 export function resolveLLMEndpoint(
-  config: Pick<ProviderConfig, 'provider' | 'mode' | 'baseUrl' | 'model' | 'protocol'>,
+  config: Pick<ProviderConfig, 'provider' | 'mode' | 'baseUrl' | 'model'>,
 ): ResolvedLLMEndpoint {
   const mode = config.mode ?? 'direct';
   const fallbackBaseUrl = getDefaultProviderBaseUrl(config.provider);
   let protocol: LLMEndpointProtocol;
   let endpointUrl: string;
 
-  if (config.provider === 'custom' && config.protocol) {
-    if (!config.baseUrl?.trim()) throw new Error('Base URL is required.');
-    protocol = config.protocol;
-    switch (protocol) {
-      case 'responses':
-        endpointUrl = buildOpenAIResponsesUrl(config.baseUrl, fallbackBaseUrl);
-        break;
-      case 'chat_completions':
-        endpointUrl = buildOpenAIChatCompletionsUrl(config.baseUrl, fallbackBaseUrl);
-        break;
-      case 'anthropic_messages':
-        endpointUrl = buildAnthropicMessagesUrl(config.baseUrl, fallbackBaseUrl);
-        break;
-      case 'google_generate_content':
-        endpointUrl = buildGenerateContentUrl(config.baseUrl, config.model, '', fallbackBaseUrl);
-        break;
-      default:
-        throw new Error('Unsupported custom endpoint protocol.');
-    }
-  } else if (mode === 'proxy') {
-    protocol = 'openai_compatible_negotiation';
-    endpointUrl = /^(?:gpt-5|o[134](?:-|$)|claude-)/i.test(config.model)
-      ? buildOpenAIResponsesUrl(config.baseUrl, fallbackBaseUrl)
-      : buildOpenAIChatCompletionsUrl(config.baseUrl, fallbackBaseUrl);
+  if (mode === 'proxy') {
+    protocol = 'chat_completions';
+    endpointUrl = buildOpenAIChatCompletionsUrl(config.baseUrl, fallbackBaseUrl);
   } else if (config.provider === 'openai' || config.provider === 'custom') {
     protocol = 'responses';
     endpointUrl = buildOpenAIResponsesUrl(config.baseUrl, fallbackBaseUrl);

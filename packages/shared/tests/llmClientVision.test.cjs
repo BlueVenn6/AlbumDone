@@ -88,7 +88,10 @@ function assertOpenAIResponsesImageRequest(call, expected) {
 
     global.fetch = async (url, init = {}) => {
       calls.push({ url: String(url), init });
-      const content = isConnectionProbe(init) ? 'ok' : 'vision ok';
+      const bodyText = String(init.body || '');
+      const content = bodyText.includes('dominant color')
+        ? 'red'
+        : isConnectionProbe(init) ? 'ok' : 'vision ok';
       if (String(url).endsWith('/responses')) {
         return jsonResponse({
           output_text: content,
@@ -143,12 +146,6 @@ function assertOpenAIResponsesImageRequest(call, expected) {
         baseUrl: 'https://api.openai.test/v1',
         expectedUrl: 'https://api.openai.test/v1/responses',
       },
-      {
-        provider: 'custom',
-        model: 'llava',
-        baseUrl: 'https://relay.example.com/v1',
-        expectedUrl: 'https://relay.example.com/v1/responses',
-      },
     ];
 
     for (const config of responsesDirect) {
@@ -193,15 +190,8 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     assert.strictEqual(calls[0].url, 'https://api.openai.test/v1/responses');
     const openAIConnectionBody = parseJsonBody(calls[0].init);
     assert.strictEqual(openAIConnectionBody.input[0].content[0].type, 'input_image');
-    assert.match(openAIConnectionBody.input[0].content[0].image_url, /^data:image\/jpeg;base64,/);
-    const connectionImage = Buffer.from(
-      openAIConnectionBody.input[0].content[0].image_url.split(',')[1],
-      'base64',
-    );
-    assert(connectionImage.length > 2000);
-    assert.strictEqual(connectionImage[0], 0xff);
-    assert.strictEqual(connectionImage[1], 0xd8);
-    assert.strictEqual(openAIConnectionBody.input[0].content[1].type, 'input_text');
+    assert.match(openAIConnectionBody.input[0].content[0].image_url, /^data:image\/png;base64,iVBORw0KGgo/);
+    assert.match(openAIConnectionBody.input[0].content[1].text, /dominant color/);
     assert.strictEqual(openAIConnectionBody.temperature, undefined);
 
     const openAICompatibleDirect = [
@@ -261,9 +251,9 @@ function assertOpenAIResponsesImageRequest(call, expected) {
       const connectionResult = await client.testConnection();
       assert.deepStrictEqual(connectionResult, { success: true, mode: 'vision' });
       const connectionBody = parseJsonBody(calls[0].init);
-      const connectionDataUrl = connectionBody.messages[0].content[0].image_url.url;
-      assert.match(connectionDataUrl, /^data:image\/jpeg;base64,/);
-      assert(Buffer.from(connectionDataUrl.split(',')[1], 'base64').length > 2000);
+      assert(Array.isArray(connectionBody.messages[0].content));
+      assert.match(connectionBody.messages[0].content[0].image_url.url, /^data:image\/png;base64,iVBORw0KGgo/);
+      assert.match(connectionBody.messages[0].content[1].text, /dominant color/);
       if (config.provider === 'minimax') {
         assert.strictEqual(connectionBody.max_tokens, 512);
       }
@@ -297,8 +287,8 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     assert.strictEqual(calls.length, 1);
     const proxyTestBody = parseJsonBody(calls[0].init);
     assert.strictEqual(calls[0].url, 'https://proxy.example.com/v1/chat/completions');
-    assert.strictEqual(proxyTestBody.messages[0].content[0].type, 'image_url');
-    assert.strictEqual(proxyTestBody.messages[0].content[1].type, 'text');
+    assert(Array.isArray(proxyTestBody.messages[0].content));
+    assert.match(proxyTestBody.messages[0].content[0].image_url.url, /^data:image\/png;base64,iVBORw0KGgo/);
 
     calls.length = 0;
     const responsesProxyClient = new LLMClient({
@@ -316,20 +306,14 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     );
     assert.strictEqual(responsesProxyResult.content, 'vision ok');
     assert.strictEqual(calls.length, 1);
-    assert.strictEqual(calls[0].url, 'https://proxy.example.com/v1/responses');
+    assert.strictEqual(calls[0].url, 'https://proxy.example.com/v1/chat/completions');
 
     calls.length = 0;
     global.fetch = async (url, init = {}) => {
       calls.push({ url: String(url), init });
-      if (String(url).endsWith('/responses')) {
-        return jsonResponse({ error: { message: 'upstream unavailable' } }, 500);
-      }
-      if (String(url).endsWith('/chat/completions')) {
-        return jsonResponse({ error: { message: 'unsupported request shape' } }, 400);
-      }
-      return jsonResponse({ content: [{ type: 'text', text: 'ok' }] });
+      return jsonResponse({ error: { message: 'unsupported request shape' } }, 400);
     };
-    const negotiatedAnthropicClient = new LLMClient({
+    const fixedAnthropicProxyClient = new LLMClient({
       provider: 'anthropic',
       apiKey: 'proxy-key',
       model: 'claude-sonnet-5',
@@ -337,25 +321,17 @@ function assertOpenAIResponsesImageRequest(call, expected) {
       supportsVision: true,
       mode: 'proxy',
     });
-    const negotiatedAnthropicResult = await negotiatedAnthropicClient.testConnection();
-    assert.deepStrictEqual(negotiatedAnthropicResult, {
-      success: true,
-      mode: 'vision',
-      resolvedProviderMode: 'direct',
-    });
+    const fixedAnthropicResult = await fixedAnthropicProxyClient.testConnection();
+    assert.strictEqual(fixedAnthropicResult.success, false);
+    assert.strictEqual(fixedAnthropicResult.category, 'request_format');
     assert.deepStrictEqual(calls.map((call) => call.url), [
-      'https://proxy.example.com/v1/responses',
       'https://proxy.example.com/v1/chat/completions',
-      'https://proxy.example.com/v1/messages',
-    ]);
+    ], 'An Anthropic relay must use the same Chat Completions route as the working legacy flow.');
 
     calls.length = 0;
     global.fetch = async (url, init = {}) => {
       calls.push({ url: String(url), init });
-      if (String(url).endsWith('/chat/completions')) {
-        return jsonResponse({ error: { message: 'unsupported request shape' } }, 400);
-      }
-      return jsonResponse({ output_text: 'fallback ok' });
+      return jsonResponse({ choices: [{ message: { content: 'proxy ok' } }] });
     };
     const fallbackProxyClient = new LLMClient({
       provider: 'custom',
@@ -365,22 +341,24 @@ function assertOpenAIResponsesImageRequest(call, expected) {
       supportsVision: true,
       mode: 'proxy',
     });
-    const fallbackProxyResult = await fallbackProxyClient.chatWithImage(
-      'read the screenshot',
-      'ZmFrZS1pbWFnZQ==',
-      'image/jpeg',
+    const fallbackResult = await fallbackProxyClient.chatWithImage(
+      'read the screenshot', 'ZmFrZS1pbWFnZQ==', 'image/jpeg',
     );
-    assert.strictEqual(fallbackProxyResult.content, 'fallback ok');
+    assert.strictEqual(fallbackResult.content, 'proxy ok');
     assert.deepStrictEqual(calls.map((call) => call.url), [
       'https://proxy.example.com/v1/chat/completions',
-      'https://proxy.example.com/v1/responses',
-    ]);
+    ], 'A custom relay must use Chat Completions without hidden protocol retries.');
+    for (const call of calls) {
+      const requestBody = JSON.stringify(parseJsonBody(call.init));
+      assert(requestBody.includes('ZmFrZS1pbWFnZQ=='), 'The proxy request must include the selected photo bytes.');
+      assert(requestBody.includes('read the screenshot'), 'The proxy request must include the instruction.');
+    }
 
     calls.length = 0;
     global.fetch = async (url, init = {}) => {
       calls.push({ url: String(url), init });
       return jsonResponse({
-        choices: [{ message: { content: '', reasoning_content: 'ok' } }],
+        choices: [{ message: { content: '', reasoning_content: 'red' } }],
       });
     };
     const glmReasoningClient = new LLMClient({
@@ -395,6 +373,11 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     assert.strictEqual(parseJsonBody(calls[0].init).max_tokens, 512);
 
     calls.length = 0;
+    global.fetch = async (url, init = {}) => {
+      calls.push({ url: String(url), init });
+      const content = String(init.body || '').includes('dominant color') ? 'red' : 'ok';
+      return jsonResponse({ choices: [{ message: { content } }] });
+    };
     const textOnlyClient = new LLMClient({
       provider: 'moonshot',
       apiKey: 'moonshot-key',
@@ -425,7 +408,7 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     const deepSeekBody = parseJsonBody(calls[0].init);
     assert.strictEqual(deepSeekBody.model, 'deepseek-flash');
     assert(Array.isArray(deepSeekBody.messages[0].content));
-    assert(deepSeekBody.messages[0].content.some((part) => part.type === 'image_url'));
+    assert.match(deepSeekBody.messages[0].content[0].image_url.url, /^data:image\/png;base64,iVBORw0KGgo/);
 
     const staleProxyClient = new LLMClient({
       provider: 'moonshot',
@@ -447,7 +430,10 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     calls.length = 0;
     global.fetch = async (url, init = {}) => {
       calls.push({ url: String(url), init });
-      const content = isConnectionProbe(init) ? 'ok' : 'anthropic vision ok';
+      const bodyText = String(init.body || '');
+      const content = bodyText.includes('dominant color')
+        ? 'red'
+        : isConnectionProbe(init) ? 'ok' : 'anthropic vision ok';
       return jsonResponse({
         content: [{ type: 'text', text: content }],
         usage: { input_tokens: 9, output_tokens: 4 },
@@ -491,16 +477,17 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     const anthropicConnection = await anthropicClient.testConnection();
     assert.deepStrictEqual(anthropicConnection, { success: true, mode: 'vision' });
     const anthropicConnectionBody = parseJsonBody(calls[0].init);
-    assert.strictEqual(anthropicConnectionBody.messages[0].content[0].source.media_type, 'image/jpeg');
-    assert(Buffer.from(
-      anthropicConnectionBody.messages[0].content[0].source.data,
-      'base64',
-    ).length > 2000);
+    assert(Array.isArray(anthropicConnectionBody.messages[0].content));
+    assert.strictEqual(anthropicConnectionBody.messages[0].content[0].type, 'image');
+    assert.match(anthropicConnectionBody.messages[0].content[0].source.data, /^iVBORw0KGgo/);
 
     calls.length = 0;
     global.fetch = async (url, init = {}) => {
       calls.push({ url: String(url), init });
-      const content = isConnectionProbe(init) ? 'ok' : 'google vision ok';
+      const bodyText = String(init.body || '');
+      const content = bodyText.includes('dominant color')
+        ? 'red'
+        : isConnectionProbe(init) ? 'ok' : 'google vision ok';
       return jsonResponse({
         candidates: [
           {
@@ -551,11 +538,8 @@ function assertOpenAIResponsesImageRequest(call, expected) {
     const googleConnection = await googleClient.testConnection();
     assert.deepStrictEqual(googleConnection, { success: true, mode: 'vision' });
     const googleConnectionBody = parseJsonBody(calls[0].init);
-    assert.strictEqual(googleConnectionBody.contents[0].parts[0].inline_data.mime_type, 'image/jpeg');
-    assert(Buffer.from(
-      googleConnectionBody.contents[0].parts[0].inline_data.data,
-      'base64',
-    ).length > 2000);
+    assert.match(googleConnectionBody.contents[0].parts[0].inline_data.data, /^iVBORw0KGgo/);
+    assert.match(googleConnectionBody.contents[0].parts[1].text, /dominant color/);
 
     const googleFailureCases = [
       {

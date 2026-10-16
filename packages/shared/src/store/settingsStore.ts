@@ -13,31 +13,21 @@ import type {
   OcrLanguage,
   CustomInstruction,
 } from '../types';
-import { DEFAULT_SETTINGS, CUSTOM_LLM_PROTOCOLS, configSupportsVision, getValidConnectionTests, normalizeProviderModel } from '../types';
-
-function getCustomProviderFields(config: ProviderConfig): Partial<ProviderConfig> {
-  if (config.provider !== 'custom' || !config.protocol) return {};
-  if (!CUSTOM_LLM_PROTOCOLS.includes(config.protocol)) {
-    throw new Error('Unsupported custom endpoint protocol.');
-  }
-  const connectionTests = getValidConnectionTests(config);
-  return { protocol: config.protocol, ...(connectionTests ? { connectionTests } : {}) };
-}
+import { DEFAULT_SETTINGS, configSupportsVision, inferProviderMode, normalizeProviderModel } from '../types';
 
 function createRuntimeProviderConfig(config: ProviderConfig): ProviderConfig {
   const trimmedApiKey = config.apiKey?.trim();
 
   return {
     provider: config.provider,
-    ...getCustomProviderFields(config),
     model: normalizeProviderModel(config.provider, config.model),
     ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {}),
     ...(config.baseUrl?.trim() ? { baseUrl: config.baseUrl.trim() } : {}),
     hasApiKey: Boolean(trimmedApiKey || config.hasApiKey),
-    mode: config.mode ?? 'direct',
+    mode: inferProviderMode(config.provider, config.baseUrl),
     supportsVision: configSupportsVision({
       ...config,
-      mode: config.mode ?? 'direct',
+      mode: inferProviderMode(config.provider, config.baseUrl),
     }),
   };
 }
@@ -48,15 +38,14 @@ function sanitizeProviderConfigForPersistence(
 ): ProviderConfig {
   return {
     provider,
-    ...getCustomProviderFields({ ...config, provider }),
     model: normalizeProviderModel(provider, config.model),
     hasApiKey: Boolean(config.apiKey?.trim() || config.hasApiKey),
-    mode: config.mode ?? 'direct',
+    mode: inferProviderMode(provider, config.baseUrl),
     ...(config.baseUrl?.trim() ? { baseUrl: config.baseUrl.trim() } : {}),
     supportsVision: configSupportsVision({
       ...config,
       provider,
-      mode: config.mode ?? 'direct',
+      mode: inferProviderMode(provider, config.baseUrl),
     }),
   };
 }

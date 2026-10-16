@@ -184,9 +184,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       supportsVision?: boolean;
       mode?: 'direct' | 'proxy';
       apiKey?: string;
-      protocol?: import('@photo-manager/shared').CustomLLMProtocol;
-      connectionTests?: import('@photo-manager/shared').ProviderConnectionTests;
-      testMode?: import('@photo-manager/shared').LLMConnectionTestMode;
     }) => invoke('llm:testConnection', params),
     chat: (params: unknown) => invoke('llm:chat', params),
     chatWithImage: (params: unknown) => invoke('llm:chatWithImage', params),
