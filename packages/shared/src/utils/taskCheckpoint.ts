@@ -204,6 +204,30 @@ export function recordPhotoTaskDeletionResult(
   };
 }
 
+export function reconcilePhotoTaskDeletionResult(
+  checkpoint: PhotoTaskCheckpoint,
+  result: { committedIds: string[]; failedIds?: string[] },
+  now = Date.now(),
+): PhotoTaskCheckpoint {
+  const requested = new Set(checkpoint.deletion.requestedIds);
+  const committedIds = uniqueIds(result.committedIds)
+    .filter((photoId) => requested.has(photoId));
+  const committed = new Set(committedIds);
+  const failedIds = uniqueIds(result.failedIds ?? [])
+    .filter((photoId) => requested.has(photoId) && !committed.has(photoId));
+  const remaining = checkpoint.deletion.requestedIds.filter((photoId) => !committed.has(photoId));
+  return {
+    ...checkpoint,
+    status: remaining.length === 0 ? 'completed' : 'deleting',
+    deletion: {
+      ...checkpoint.deletion,
+      committedIds,
+      failedIds,
+    },
+    updatedAt: now,
+  };
+}
+
 export function cancelPhotoTaskCheckpoint(
   checkpoint: PhotoTaskCheckpoint,
   now = Date.now(),
@@ -235,7 +259,11 @@ export function resumePhotoTaskCheckpoint(
     checkpoint.decisions[photoId] ?? 'pending',
   ])) as Record<string, PhotoTaskDecision>;
   const requestedIds = checkpoint.deletion.requestedIds.filter((photoId) => available.has(photoId));
-  const committedIds = checkpoint.deletion.committedIds.filter((photoId) => requestedIds.includes(photoId));
+  // A deleting checkpoint may contain provisional per-batch commits. Any such ID
+  // still returned by the authoritative library scan must be retried.
+  const committedIds = checkpoint.status === 'deleting'
+    ? []
+    : checkpoint.deletion.committedIds.filter((photoId) => requestedIds.includes(photoId));
   const updated: PhotoTaskCheckpoint = {
     ...checkpoint,
     snapshotKey,

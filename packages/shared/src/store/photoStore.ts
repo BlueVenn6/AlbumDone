@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
+import { freeze } from 'immer';
 import type { Photo, Album, DuplicateGroup } from '../types';
-import { groupSimilarPhotosAsync } from '../utils/deduplication';
+import { getSafeRejectedPhotoIds, groupSimilarPhotosAsync } from '../utils/deduplication';
 import { detectScreenshots } from '../utils/screenshotDetector';
 
 export interface PhotoState {
@@ -18,14 +19,17 @@ export interface PhotoState {
   // Actions
   setAlbums: (albums: Album[]) => void;
   setSelectedAlbum: (albumId: string | null) => void;
-  loadPhotos: (photos: Photo[]) => void;
-  addPhotos: (photos: Photo[]) => void;
+  loadPhotos: (photos: Photo[], screenshotsDetected?: boolean) => void;
+  addPhotos: (photos: Photo[], screenshotsDetected?: boolean) => void;
   runDeduplication: (options?: {
     photoIds?: string[];
+    initialSelection?: 'keep-best';
     onProgress?: (progress: number, status: string) => void;
   }) => Promise<void>;
   cancelDeduplication: () => void;
   toggleDuplicateSelection: (groupId: string, photoId: string) => void;
+  keepOnlyDuplicate: (groupId: string, photoId: string) => void;
+  keepAllDuplicates: (groupId: string) => void;
   confirmDeduplication: () => Photo[];
   markForDeletion: (photoIds: string[]) => void;
   removePhotosById: (photoIds: string[]) => void;
@@ -50,6 +54,8 @@ const initialState = {
 };
 
 let activeDedupeRun = 0;
+let indexedPhotos: Photo[] | undefined;
+let indexedPhotoIds = new Set<string>();
 
 export const usePhotoStore = create<PhotoState>()(
   immer((set, get) => ({
@@ -71,23 +77,34 @@ export const usePhotoStore = create<PhotoState>()(
         state.dedupeStatus = '';
       }),
 
-    loadPhotos: (photos) =>
-      set((state) => {
-        state.photos = detectScreenshots(photos);
-        state.duplicateGroups = [];
-        state.pendingDeletion = [];
-        state.dedupeProgress = 0;
-        state.dedupeStatus = '';
-        state.isLoading = false;
-        state.error = null;
-      }),
+    loadPhotos: (photos, screenshotsDetected = false) => {
+      const nextPhotos = freeze(screenshotsDetected ? [...photos] : detectScreenshots(photos), true);
+      indexedPhotoIds = new Set(nextPhotos.map((photo) => photo.id));
+      indexedPhotos = nextPhotos;
+      set({ photos: nextPhotos, duplicateGroups: [], pendingDeletion: [],
+        dedupeProgress: 0, dedupeStatus: '', isLoading: false, error: null });
+    },
 
-    addPhotos: (photos) =>
-      set((state) => {
-        const existingIds = new Set(state.photos.map((p) => p.id));
-        const newPhotos = detectScreenshots(photos.filter((p) => !existingIds.has(p.id)));
-        state.photos.push(...newPhotos);
-      }),
+    addPhotos: (photos, screenshotsDetected = false) => {
+      const current = get().photos;
+      // Read immutable state outside Immer: traversing a growing draft on each page
+      // creates proxies for the entire library and stalls the JS thread.
+      if (indexedPhotos !== current) {
+        indexedPhotoIds = new Set(current.map((photo) => photo.id));
+      }
+      const unique = photos.filter((photo) => {
+        if (indexedPhotoIds.has(photo.id)) return false;
+        indexedPhotoIds.add(photo.id);
+        return true;
+      });
+      if (unique.length === 0) {
+        indexedPhotos = current;
+        return;
+      }
+      const added = freeze(screenshotsDetected ? unique : detectScreenshots(unique), true);
+      indexedPhotos = freeze(current.concat(added));
+      set({ photos: indexedPhotos });
+    },
 
     runDeduplication: async (options = {}) => {
       const { photos } = get();
@@ -118,6 +135,7 @@ export const usePhotoStore = create<PhotoState>()(
         const groups = await groupSimilarPhotosAsync(sortedPhotos, {
           shouldCancel: () => runId !== activeDedupeRun,
           onProgress: ({ stage, processed, total: comparisons }) => {
+            if (runId !== activeDedupeRun) return;
             if (stage === 'exact') {
               return;
             }
@@ -133,12 +151,22 @@ export const usePhotoStore = create<PhotoState>()(
 
         options.onProgress?.(100, `dedup.status.found:${groups.length}`);
         set({
-          duplicateGroups: groups,
+          // The mobile review screen explicitly opts in to one keeper per group.
+          // Apply this once, never when reading or rendering a user's choices.
+          duplicateGroups: options.initialSelection === 'keep-best'
+            ? groups.map((group) => ({
+              ...group,
+              rejectedPhotoIds: group.photos
+                .filter((photo) => photo.id !== group.selectedPhotoId)
+                .map((photo) => photo.id),
+            }))
+            : groups,
           dedupeProgress: 100,
           dedupeStatus: `dedup.status.found:${groups.length}`,
           isLoading: false,
         });
       } catch (err) {
+        if (runId !== activeDedupeRun) return;
         if (err instanceof Error && err.name === 'AbortError') {
           set((state) => {
             state.isLoading = false;
@@ -174,10 +202,7 @@ export const usePhotoStore = create<PhotoState>()(
           return;
         }
 
-        const currentRejectedPhotoIds = group.rejectedPhotoIds
-          ?? group.photos
-            .filter((photo) => photo.id !== group.selectedPhotoId)
-            .map((photo) => photo.id);
+        const currentRejectedPhotoIds = getSafeRejectedPhotoIds(group);
         const rejectedSet = new Set(currentRejectedPhotoIds);
 
         if (rejectedSet.has(photoId)) {
@@ -201,15 +226,29 @@ export const usePhotoStore = create<PhotoState>()(
         group.reason = 'manual-selection';
       }),
 
+    keepOnlyDuplicate: (groupId, photoId) =>
+      set((state) => {
+        const group = state.duplicateGroups.find((candidate) => candidate.id === groupId);
+        if (!group || !group.photos.some((photo) => photo.id === photoId)) return;
+        group.selectedPhotoId = photoId;
+        group.rejectedPhotoIds = group.photos.filter((photo) => photo.id !== photoId).map((photo) => photo.id);
+        group.reason = 'manual-selection';
+      }),
+
+    keepAllDuplicates: (groupId) =>
+      set((state) => {
+        const group = state.duplicateGroups.find((candidate) => candidate.id === groupId);
+        if (!group) return;
+        group.rejectedPhotoIds = [];
+        group.reason = 'manual-selection';
+      }),
+
     confirmDeduplication: () => {
       const { duplicateGroups } = get();
       const toDelete: Photo[] = [];
 
       for (const group of duplicateGroups) {
-        const rejectedPhotoIds = group.rejectedPhotoIds
-          ?? group.photos
-            .filter((photo) => photo.id !== group.selectedPhotoId)
-            .map((photo) => photo.id);
+        const rejectedPhotoIds = getSafeRejectedPhotoIds(group);
         const rejectedSet = new Set(rejectedPhotoIds);
         const losers = group.photos.filter((photo) => rejectedSet.has(photo.id));
         toDelete.push(...losers);
@@ -245,7 +284,7 @@ export const usePhotoStore = create<PhotoState>()(
         for (const group of state.duplicateGroups) {
           group.photos = group.photos.filter((photo) => !deleteSet.has(photo.id));
           const rejectedPhotoIds = group.rejectedPhotoIds?.filter((photoId) => !deleteSet.has(photoId));
-          if (rejectedPhotoIds && rejectedPhotoIds.length > 0) {
+          if (rejectedPhotoIds !== undefined) {
             group.rejectedPhotoIds = rejectedPhotoIds;
           } else {
             delete group.rejectedPhotoIds;

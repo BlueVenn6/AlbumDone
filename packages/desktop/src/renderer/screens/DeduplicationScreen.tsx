@@ -7,9 +7,7 @@ import {
   createPhotoTaskCheckpoint,
   getRemainingPhotoTaskDeletionIds,
   getSafeRejectedPhotoIds,
-  getLocalizedAlbumTitle,
   localFileUriToPath,
-  photoTaskBatchesMatch,
   preparePhotoTaskDeletion,
   recordPhotoTaskDeletionResult,
   resumePhotoTaskCheckpoint,
@@ -17,6 +15,7 @@ import {
   usePhotoStore,
   useTranslation,
 } from '@photo-manager/shared';
+import { captureDedupeReview, createDedupeAlbumProgress, getDedupeTaskRecovery, loadDedupeAlbumProgress, restoreDedupeReview, saveDedupeAlbumProgress, type DedupeAlbumProgress } from '../utils/dedupeProgressStorage';
 import { useLoadPhotos } from '../hooks/useLoadPhotos';
 import { usePhotoThumbnail } from '../hooks/usePhotoThumbnail';
 import { updateAlbumCountAfterLocalDelete } from '../utils/albumCountCache';
@@ -275,8 +274,7 @@ export function DeduplicationScreen(): React.JSX.Element {
   const location = useLocation();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { albumId, albumTitle } = (location.state as { albumId: string; albumTitle: string }) ?? {};
-  const displayAlbumTitle = getLocalizedAlbumTitle(albumTitle ?? '', t);
+  const { albumId } = (location.state as { albumId: string; albumTitle: string }) ?? {};
 
   const {
     photos,
@@ -286,6 +284,8 @@ export function DeduplicationScreen(): React.JSX.Element {
     runDeduplication,
     cancelDeduplication,
     toggleDuplicateSelection,
+    keepOnlyDuplicate,
+    keepAllDuplicates,
     removePhotosById,
   } = usePhotoStore();
 
@@ -300,6 +300,23 @@ export function DeduplicationScreen(): React.JSX.Element {
   const [batchSize, setBatchSize] = useState<BatchSizeOption>('100');
   const [customBatchSize, setCustomBatchSize] = useState('100');
   const [analysisBatch, setAnalysisBatch] = useState<PhotoTaskBatch | null>(null);
+  const [checkedCount, setCheckedCount] = useState(0);
+  const [recoveryKind, setRecoveryKind] = useState<'scan' | 'review' | null>(null);
+  const analysisModeRef = useRef<'continue' | 'restart' | 'resume'>('continue');
+  const albumProgressRef = useRef(createDedupeAlbumProgress(albumId));
+  const progressWriteRef = useRef<Promise<void>>(Promise.resolve());
+  const persistProgress = useCallback((progress: DedupeAlbumProgress) => {
+    albumProgressRef.current = progress;
+    const pending = progressWriteRef.current.then(() => saveDedupeAlbumProgress(progress));
+    progressWriteRef.current = pending;
+    return pending;
+  }, []);
+  const saveReview = useCallback(() => {
+    if (!checkpointRef.current) return;
+    void persistProgress({ ...albumProgressRef.current,
+      review: captureDedupeReview(checkpointRef.current.id, usePhotoStore.getState().duplicateGroups, true),
+    }).catch((error: unknown) => setAnalysisFailure(error instanceof Error ? error.message : t('common.progressSaveFailed')));
+  }, [persistProgress, t]);
   const [selectedTaskCount, setSelectedTaskCount] = useState(0);
   const cancelRequestedRef = useRef(false);
   const checkpointRef = useRef<PhotoTaskCheckpoint | null>(null);
@@ -330,11 +347,22 @@ export function DeduplicationScreen(): React.JSX.Element {
         const initialPhotos = usePhotoStore.getState().photos;
         const initialSnapshot = createAlbumSnapshot(albumId, initialPhotos);
         if (!analysisBatch) {
-          checkpointRef.current = null;
-          setSelectedTaskCount(0);
+          await progressWriteRef.current;
+          const progress = await loadDedupeAlbumProgress(albumId, initialSnapshot.photos.map((photo) => photo.id));
+          const stored = await loadDesktopTaskCheckpoint('deduplication', albumId);
+          if (cancelled) return;
+          albumProgressRef.current = progress;
+          checkpointRef.current = stored ? resumePhotoTaskCheckpoint(stored, initialSnapshot.snapshotKey,
+            initialSnapshot.photos.map((photo) => photo.id)) : null;
+          setCheckedCount(progress.checkedPhotoIds.length);
+          setRecoveryKind(getDedupeTaskRecovery(checkpointRef.current, progress).kind);
           setPhase('setup');
           return;
         }
+        await progressWriteRef.current;
+        const mode = analysisModeRef.current;
+        const progress = mode === 'restart' ? createDedupeAlbumProgress(albumId) : albumProgressRef.current;
+        const checked = new Set(progress.checkedPhotoIds);
         const storedCheckpoint = await loadDesktopTaskCheckpoint('deduplication', albumId);
         const resumedCheckpoint = storedCheckpoint
           ? resumePhotoTaskCheckpoint(
@@ -343,33 +371,34 @@ export function DeduplicationScreen(): React.JSX.Element {
             initialSnapshot.photos.map((photo) => photo.id),
           )
           : null;
-        const matchingCheckpoint = resumedCheckpoint
-          && photoTaskBatchesMatch(
-            resumedCheckpoint.batch,
-            analysisBatch,
-            initialSnapshot.count,
-          )
-          ? resumedCheckpoint
-          : null;
-        checkpointRef.current = matchingCheckpoint ?? createPhotoTaskCheckpoint({
+        checkpointRef.current = mode === 'resume' ? resumedCheckpoint : createPhotoTaskCheckpoint({
           id: `deduplication:${albumId}:${Date.now()}`,
-          kind: 'deduplication',
-          albumId,
-          snapshotKey: initialSnapshot.snapshotKey,
-          photoIds: initialSnapshot.photos.map((photo) => photo.id),
+          kind: 'deduplication', albumId, snapshotKey: initialSnapshot.snapshotKey,
+          photoIds: initialSnapshot.photos.filter((photo) => mode === 'restart' || !checked.has(photo.id)).map((photo) => photo.id),
           batch: analysisBatch,
         });
+        if (!checkpointRef.current || checkpointRef.current.photoIds.length === 0) {
+          setAnalysisBatch(null);
+          setPhase('setup');
+          return;
+        }
+        if (mode !== 'resume') await persistProgress({ ...progress, scanTaskId: checkpointRef.current.id, review: null });
+        if (cancelled) return;
         setSelectedTaskCount(checkpointRef.current.photoIds.length);
         analysisStarted = true;
         await saveDesktopTaskCheckpoint(checkpointRef.current);
         const taskPhotoIds = new Set(checkpointRef.current.photoIds);
         const taskPhotos = initialSnapshot.photos.filter((photo) => taskPhotoIds.has(photo.id));
         setRefinementPhase('running');
+        let contentFailures = 0;
+        let signatureFailures = 0;
         await addDedupeSignaturesToCandidatePhotos(taskPhotos, {
           isCancelled: () => cancelled || cancelRequestedRef.current,
           onProgress: (progress) => {
             setHashProgress(progress);
-            setSignatureFailureCount(progress.stage === 'visual' ? progress.failed : 0);
+            if (progress.stage === 'content') contentFailures = progress.failed;
+            signatureFailures = contentFailures + (progress.stage === 'visual' ? progress.failed : 0);
+            setSignatureFailureCount(signatureFailures);
           },
         });
         if (cancelRequestedRef.current) {
@@ -382,7 +411,8 @@ export function DeduplicationScreen(): React.JSX.Element {
         }
         setRefinementPhase('idle');
         setHashProgress(null);
-        await runDeduplication({ photoIds: checkpointRef.current.photoIds });
+        await runDeduplication({ photoIds: checkpointRef.current.photoIds, initialSelection: 'keep-best' });
+        if (cancelled || cancelRequestedRef.current) return;
         if (checkpointRef.current?.status === 'deleting') {
           const pendingIds = new Set(getRemainingPhotoTaskDeletionIds(checkpointRef.current));
           usePhotoStore.setState((state) => ({
@@ -394,6 +424,25 @@ export function DeduplicationScreen(): React.JSX.Element {
             })),
           }));
         }
+        const checkpoint = checkpointRef.current;
+        const savedReview = progress.review;
+        if (savedReview?.taskId === checkpoint.id && (checkpoint.status !== 'deleting' || savedReview.manual)) {
+          usePhotoStore.setState((state) => ({ duplicateGroups: restoreDedupeReview(state.duplicateGroups, savedReview) }));
+        }
+        if (!usePhotoStore.getState().error && signatureFailures === 0) {
+          const groups = usePhotoStore.getState().duplicateGroups;
+          await persistProgress({ ...progress, scanTaskId: null,
+            checkedPhotoIds: [...new Set([...progress.checkedPhotoIds, ...checkpoint.photoIds])],
+            review: groups.length > 0 ? captureDedupeReview(checkpoint.id, groups, savedReview?.manual) : null,
+          });
+          if (cancelled) return;
+          setCheckedCount(albumProgressRef.current.checkedPhotoIds.length);
+          if (groups.length === 0 && checkpoint.status !== 'deleting') {
+            await deleteDesktopTaskCheckpoint('deduplication', albumId);
+            checkpointRef.current = null;
+          }
+        }
+        setRecoveryKind(getDedupeTaskRecovery(checkpointRef.current, albumProgressRef.current).kind);
       } catch (err) {
         if (!cancelled && !cancelRequestedRef.current) {
           runFailed = true;
@@ -428,11 +477,19 @@ export function DeduplicationScreen(): React.JSX.Element {
       cancelRequestedRef.current = true;
       void window.electronAPI?.fs.cancelVisualHashes?.().catch(() => null);
     };
-  }, [albumId, analysisBatch, photosError, photosLoading, runDeduplication]);
+  }, [albumId, analysisBatch, persistProgress, photosError, photosLoading, runDeduplication]);
 
-  const handleStartAnalysis = useCallback(() => {
+  const handleStartAnalysis = useCallback((mode: 'continue' | 'restart' | 'resume' = 'continue') => {
+    if (mode !== 'resume' && getDedupeTaskRecovery(checkpointRef.current, albumProgressRef.current).hasPendingDeletion
+      && !window.confirm(t('dedup.replaceTaskBody'))) return;
+    analysisModeRef.current = mode;
     setAnalysisBatch(getTaskBatch(batchSize, customBatchSize, photos.length));
-  }, [batchSize, customBatchSize, photos.length]);
+  }, [batchSize, customBatchSize, photos.length, t]);
+
+  const returnToSetup = useCallback(() => {
+    setAnalysisBatch(null);
+    setPhase('setup');
+  }, []);
 
   const totalToDelete = Math.max(
     0,
@@ -440,7 +497,8 @@ export function DeduplicationScreen(): React.JSX.Element {
   );
 
   const handleConfirm = useCallback(async (permanent = false) => {
-    if (phase === 'confirming') return;
+    if (phase === 'confirming' || totalToDelete === 0) return;
+    if (!window.confirm(t('dedup.confirmSelection', { count: totalToDelete, kept: duplicateGroups.reduce((sum, group) => sum + group.photos.length, 0) - totalToDelete }))) return;
     try {
     setPhase('confirming');
     setDeleteFailure(null);
@@ -499,6 +557,7 @@ export function DeduplicationScreen(): React.JSX.Element {
     }
 
     if (checkpointRef.current?.status === 'completed') {
+      await persistProgress({ ...albumProgressRef.current, review: null, scanTaskId: null });
       await deleteDesktopTaskCheckpoint('deduplication', albumId);
       checkpointRef.current = null;
     }
@@ -515,7 +574,7 @@ export function DeduplicationScreen(): React.JSX.Element {
       setDeleteFailure({ deleted: 0, errors: [err instanceof Error ? err.message : String(err)] });
       setPhase('results');
     }
-  }, [albumId, duplicateGroups, removePhotosById, phase, t]);
+  }, [albumId, duplicateGroups, persistProgress, removePhotosById, phase, t, totalToDelete]);
 
   const toggleGroup = useCallback((id: string) => {
     setExpandedGroups((prev) => {
@@ -532,11 +591,14 @@ export function DeduplicationScreen(): React.JSX.Element {
   }, [cancelDeduplication]);
 
   if (phase === 'setup') {
+    const folderFullyChecked = photos.length > 0 && checkedCount >= photos.length;
     return (
       <div style={styles.centered}>
         <div style={styles.progressCard}>
-          <h2 style={styles.heading}>{t('dedup.analyzingTitle')}</h2>
+          <h2 style={styles.heading}>{t('home.modes.dedup.title')}</h2>
           <p style={styles.statusText}>{t('common.photoCount', { count: photos.length })}</p>
+          {checkedCount > 0 && <p style={styles.statusText}>{t('dedup.albumProgress', { checked: checkedCount, remaining: Math.max(0, photos.length - checkedCount) })}</p>}
+          <label>{t('dedup.checkQuantity')}</label>
           <div style={styles.batchOptions}>
             {BATCH_SIZE_OPTIONS.map((option) => (
               <button
@@ -566,9 +628,12 @@ export function DeduplicationScreen(): React.JSX.Element {
               style={styles.batchInput}
             />
           )}
-          <button onClick={handleStartAnalysis} style={styles.primaryBtn}>
-            {t('dedup.startAnalysis')}
+          <button data-testid="dedupe-start" onClick={() => handleStartAnalysis(folderFullyChecked ? 'restart' : 'continue')} style={styles.primaryBtn}>
+            {t(folderFullyChecked ? 'dedup.restartCheck' : checkedCount > 0 ? 'dedup.continueCheck' : 'dedup.startCheck')}
           </button>
+          {recoveryKind && <button data-testid="dedupe-resume" onClick={() => handleStartAnalysis('resume')} style={styles.cancelBtn}>{t(recoveryKind === 'review' ? 'dedup.reviewResults' : 'dedup.resumeBatch')}</button>}
+          {checkedCount > 0 && !folderFullyChecked && <button data-testid="dedupe-restart" onClick={() => handleStartAnalysis('restart')} style={styles.cancelBtn}>{t('dedup.restartCheck')}</button>}
+          <details style={styles.statusText}><summary>{t('dedup.batchInfo')}</summary>{t('dedup.batchScopeHint', { restart: t('dedup.restartCheck'), all: t('culling.batchAll') })}</details>
           <button onClick={() => navigate('/')} style={styles.cancelBtn}>
             {t('common.backToHome')}
           </button>
@@ -658,8 +723,8 @@ export function DeduplicationScreen(): React.JSX.Element {
           <p style={styles.statusText}>
             {t('dedup.movedToTrash', { count: deletedCount, days: 30 })}
           </p>
-          <button onClick={() => navigate('/')} style={styles.primaryBtn}>
-            {t('common.backToHome')}
+          <button onClick={returnToSetup} style={styles.primaryBtn}>
+            {t('dedup.chooseBatch')}
           </button>
         </div>
       </div>
@@ -669,8 +734,8 @@ export function DeduplicationScreen(): React.JSX.Element {
   return (
     <div style={styles.container}>
       <div style={styles.topBar}>
-        <button onClick={() => navigate('/')} style={styles.backBtn}>
-          ← {displayAlbumTitle}
+        <button onClick={returnToSetup} disabled={phase === 'confirming'} style={styles.backBtn}>
+          ← {t('dedup.chooseBatch')}
         </button>
         <div style={styles.summary}>
           <span style={styles.summaryText}>
@@ -678,6 +743,7 @@ export function DeduplicationScreen(): React.JSX.Element {
           </span>
         </div>
         <button
+          data-testid="dedupe-confirm"
           onClick={() => handleConfirm()}
           disabled={totalToDelete === 0 || phase === 'confirming'}
           style={{
@@ -712,12 +778,16 @@ export function DeduplicationScreen(): React.JSX.Element {
         </div>
       )}
 
-      <div style={styles.groupList}>
+      <div style={{ padding: '12px 24px', color: colors.textSecondary }}>
+        <p>{t('dedup.scanScope', { count: selectedTaskCount, total: photos.length })}</p>
+        {duplicateGroups.length > 0 && <p>{t('dedup.defaultSelectionHint')}</p>}
+      </div>
+      <div style={{ ...styles.groupList, pointerEvents: phase === 'confirming' ? 'none' : undefined }}>
         {duplicateGroups.length === 0 ? (
           <div style={styles.emptyState}>
             <span style={{ fontSize: '48px' }}>{refinementPhase === 'running' ? '…' : '✓'}</span>
             <p style={styles.emptyText}>
-              {refinementPhase === 'running' ? translateDedupeStatus('dedup.status.finding', t) : t('dedup.noGroups')}
+              {refinementPhase === 'running' ? translateDedupeStatus('dedup.status.finding', t) : t('dedup.noGroupsInBatch')}
             </p>
           </div>
         ) : (
@@ -727,10 +797,17 @@ export function DeduplicationScreen(): React.JSX.Element {
               group={group}
               expanded={expandedGroups.has(group.id)}
               onToggle={() => toggleGroup(group.id)}
-              onToggleSelection={(photoId) => toggleDuplicateSelection(group.id, photoId)}
+              onToggleSelection={(photoId) => { toggleDuplicateSelection(group.id, photoId); saveReview(); }}
+              onKeepOnly={(photoId) => { keepOnlyDuplicate(group.id, photoId); saveReview(); }}
+              onKeepAll={() => { keepAllDuplicates(group.id); saveReview(); }}
             />
           ))
         )}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12, padding: 16 }}>
+        {checkedCount < photos.length && !analysisFailure && signatureFailureCount === 0 && <button data-testid="dedupe-next" style={styles.cancelBtn} disabled={phase === 'confirming'} onClick={() => handleStartAnalysis()}>{t('dedup.continueNextBatch')}</button>}
+        {(analysisFailure || signatureFailureCount > 0) && <button style={styles.cancelBtn} onClick={() => handleStartAnalysis('resume')}>{t('common.retry')}</button>}
+        <button data-testid="dedupe-choose-batch" style={styles.cancelBtn} disabled={phase === 'confirming'} onClick={returnToSetup}>{t('dedup.chooseBatch')}</button>
       </div>
     </div>
   );
@@ -741,18 +818,24 @@ function DedupeGroupCard({
   expanded,
   onToggle,
   onToggleSelection,
+  onKeepOnly,
+  onKeepAll,
 }: {
   group: DuplicateGroup;
   expanded: boolean;
   onToggle: () => void;
   onToggleSelection: (photoId: string) => void;
+  onKeepOnly: (photoId: string) => void;
+  onKeepAll: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
+  const [previewId, setPreviewId] = useState(group.selectedPhotoId);
+  const preview = group.photos.find((photo) => photo.id === previewId) ?? group.photos[0]!;
   const rejectedPhotoIds = new Set(getRejectedPhotoIds(group));
   const rejectedCount = rejectedPhotoIds.size;
 
   return (
-    <div style={styles.groupCard}>
+    <div data-testid="dedupe-group" style={styles.groupCard}>
       <div role="button" onClick={onToggle} style={styles.groupHeader}>
         <div style={styles.groupHeaderLeft}>
           <span style={styles.groupIcon}>{expanded ? '▼' : '▶'}</span>
@@ -768,17 +851,23 @@ function DedupeGroupCard({
 
       {expanded && (
         <div style={styles.groupBody}>
-          <DedupePhotoGrid group={group} rejectedPhotoIds={rejectedPhotoIds} onToggleSelection={onToggleSelection} />
+          <p>{t('dedup.groupPreview', { current: group.photos.findIndex((photo) => photo.id === preview.id) + 1, total: group.photos.length })}</p>
+          <GroupPreview photo={preview} />
+          <button style={styles.cancelBtn} onClick={onKeepAll}>{t('dedup.keepGroupAll')}</button>
+          <DedupePhotoGrid group={group} rejectedPhotoIds={rejectedPhotoIds} onToggleSelection={onToggleSelection} onPreview={setPreviewId} onKeepOnly={onKeepOnly} previewId={preview.id} />
         </div>
       )}
     </div>
   );
 }
 
-function DedupePhotoGrid({ group, rejectedPhotoIds, onToggleSelection }: {
+function DedupePhotoGrid({ group, rejectedPhotoIds, onToggleSelection, onPreview, onKeepOnly, previewId }: {
   group: DuplicateGroup;
   rejectedPhotoIds: Set<string>;
   onToggleSelection: (photoId: string) => void;
+  onPreview: (photoId: string) => void;
+  onKeepOnly: (photoId: string) => void;
+  previewId: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -794,7 +883,7 @@ function DedupePhotoGrid({ group, rejectedPhotoIds, onToggleSelection }: {
   const gap = 16;
   const columns = Math.max(1, Math.floor((viewport.width + gap) / (180 + gap)));
   const cardWidth = Math.max(1, (viewport.width - (columns - 1) * gap) / columns);
-  const rowHeight = Math.ceil(cardWidth * 0.75) + 52 + gap;
+  const rowHeight = Math.ceil(cardWidth * 0.75) + 170 + gap;
   const totalHeight = Math.ceil(group.photos.length / columns) * rowHeight;
   const height = Math.min(500, totalHeight);
   const startIndex = virtualized ? Math.max(0, Math.floor(viewport.top / rowHeight) - 2) * columns : 0;
@@ -812,7 +901,8 @@ function DedupePhotoGrid({ group, rejectedPhotoIds, onToggleSelection }: {
               return (
                 <div
                   key={photo.id}
-                  onClick={() => onToggleSelection(photo.id)}
+                  data-testid="dedupe-thumbnail"
+                  onClick={() => onPreview(photo.id)}
                   style={{
                     ...styles.photoCard,
                     ...(virtualized ? {
@@ -840,6 +930,9 @@ function DedupePhotoGrid({ group, rejectedPhotoIds, onToggleSelection }: {
                     {isKept ? `✓ ${t('dedup.keepingLabel')}` : t('dedup.rejectedLabel')}
                   </div>
                   <span style={styles.photoFilename}>{photo.filename}</span>
+                  {photo.id === previewId && <small>{t('dedup.previewingLabel')}</small>}
+                  <button style={styles.cancelBtn} onClick={(event) => { event.stopPropagation(); onKeepOnly(photo.id); }}>{t('dedup.keepOnlyThis')}</button>
+                  <button style={styles.cancelBtn} onClick={(event) => { event.stopPropagation(); onToggleSelection(photo.id); }}>{t(isRejected ? 'dedup.keepThisBtn' : 'dedup.markDeleteBtn')}</button>
                 </div>
               );
             })}
@@ -847,6 +940,13 @@ function DedupePhotoGrid({ group, rejectedPhotoIds, onToggleSelection }: {
       </div>
     </div>
   );
+}
+
+function GroupPreview({ photo }: { photo: Photo }): React.JSX.Element {
+  const { src, onLoadError } = usePhotoThumbnail(localFileUriToPath(photo.uri), true, photo.thumbnailUri, 1280, true);
+  return <div style={{ height: 280, background: colors.background, borderRadius: 12, overflow: 'hidden' }}>
+    {src && <img src={src} alt={photo.filename} onError={onLoadError} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+  </div>;
 }
 
 function DedupeThumbnail({ photo, dimmed }: { photo: Photo; dimmed: boolean }): React.JSX.Element {
@@ -910,6 +1010,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 24,
+    overflowY: 'auto',
     background: colors.background,
   },
   progressCard: {
@@ -921,7 +1023,9 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     gap: spacing.md,
-    minWidth: '360px',
+    width: 'min(520px, 100%)',
+    maxHeight: '100%',
+    overflowY: 'auto',
   },
   heading: {
     margin: 0,
@@ -1035,6 +1139,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   topBar: {
     display: 'flex',
+    flexWrap: 'wrap',
     alignItems: 'center',
     padding: `${spacing.md} ${spacing.xl}`,
     borderBottom: `1px solid ${colors.border}`,

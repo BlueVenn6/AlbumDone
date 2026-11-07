@@ -99,8 +99,8 @@ assert.strictEqual(hammingDistance(0n, (1n << 96n) - 1n), 96);
   ]);
 
   assert.strictEqual(groups.length, 1);
-  assert.strictEqual(groups[0].confidence, 'high');
-  assert.strictEqual(groups[0].rejectedPhotoIds.length, 1);
+  assert.strictEqual(groups[0].confidence, 'possible', 'Re-encoded visual similarity is not byte identity');
+  assert.deepStrictEqual(groups[0].rejectedPhotoIds, [], 'Visual similarity alone must not preselect deletion');
 }
 
 {
@@ -591,3 +591,17 @@ assert.strictEqual(hammingDistance(0n, (1n << 96n) - 1n), 96);
 }
 
 console.log('deduplication tests passed');
+
+{
+  const visualHash = visualHashFromPattern((x, y) => [x * 7, y * 7, (x + y) * 3]);
+  const live = ['live-a', 'live-b'].map(id => photo(id, {
+    contentHash: 'identical-still', visualHash, fileSize: 0, tags: ['PhotoLive'],
+  }));
+  // Live Photos must be discoverable for review. Equality of their still frame
+  // cannot prove equality of the motion/audio resources or preselect deletion.
+  const groups = groupSimilarPhotos(live);
+  assert.strictEqual(groups.length, 1, 'Live Photos enter visual review');
+  assert.deepStrictEqual(groups[0].rejectedPhotoIds, []);
+  assert.strictEqual(groups[0].confidence, 'possible');
+  assert.deepStrictEqual(groupSimilarPhotos(live.map(p => ({ ...p, dedupeExcluded: true }))), [], 'Unavailable assets cannot be compared');
+}

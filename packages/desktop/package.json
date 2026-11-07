@@ -1,7 +1,7 @@
 {
   "name": "@photo-manager/desktop",
-  "version": "0.1.2-beta.14",
-  "description": "AlbumDone - local-first photo manager",
+  "version": "0.2.0",
+  "description": "AlbumDone - offline photo deduplication, manual review and year in review",
   "author": "AlbumDone",
   "private": true,
   "license": "MIT",
@@ -9,7 +9,7 @@
   "build": {
     "appId": "com.albumdone.app",
     "productName": "AlbumDone",
-    "copyright": "Copyright © 2026 AlbumDone",
+    "copyright": "Copyright \u00a9 2026 AlbumDone",
     "electronVersion": "44.4.3",
     "directories": {
       "output": "release",
@@ -19,20 +19,9 @@
       "dist/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "chi_sim.traineddata",
-        "to": "chi_sim.traineddata"
-      },
-      {
-        "from": "eng.traineddata",
-        "to": "eng.traineddata"
-      }
-    ],
     "asarUnpack": [
       "**/*.node",
       "**/node_modules/better-sqlite3/**",
-      "**/node_modules/keytar/**",
       "**/node_modules/sharp/**",
       "**/node_modules/@img/**"
     ],
@@ -73,7 +62,9 @@
     "lint": "eslint src --ext .ts,.tsx",
     "test": "npm run build:main && node tests/asyncTimeout.test.cjs && node tests/thumbnailRecovery.test.cjs && node tests/photoDeletion.test.cjs && node tests/lanServer.test.cjs && node tests/yearInReviewMonthPlan.test.cjs && node tests/yearInReviewExport.test.cjs && node tests/runElectronBuilder.test.cjs && node tests/uiAcceptanceHarness.test.cjs",
     "package": "node scripts/package-desktop.cjs",
-    "package:dir": "npm run build && node scripts/run-electron-builder.cjs --dir"
+    "package:dir": "npm run build && node scripts/run-electron-builder.cjs --dir",
+    "test:e2e": "node scripts/acceptance.cjs",
+    "benchmark:reproducible": "node scripts/benchmark-reproducible.cjs"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.82",
@@ -82,12 +73,10 @@
     "express": "4.22.3",
     "i18next": "^23.16.8",
     "immer": "^10.2.0",
-    "keytar": "^7.9.0",
     "qrcode": "^1.5.3",
     "react": "^18.3.1",
     "react-i18next": "^14.1.3",
     "sharp": "0.35.5",
-    "tesseract.js": "^7.0.0",
     "ws": "8.21.1",
     "zustand": "^4.5.7"
   },

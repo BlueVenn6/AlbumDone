@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
-const { groupSimilarPhotos } = require('../dist/utils/deduplication');
+const { groupSimilarPhotos, groupSimilarPhotosAsync, selectDedupeSignatureCandidates } = require('../dist/utils/deduplication');
 const { computeVisualHashSignature } = require('../dist/utils/imageQuality');
 
 const fixtureDir = path.join(__dirname, 'fixtures', 'dedupe-golden');
@@ -44,6 +44,25 @@ async function main() {
   const photos = await Promise.all(manifest.cases.map(readFixture));
   const byId = new Map(photos.map((photo) => [photo.id, photo]));
   const groups = groupSimilarPhotos(photos);
+
+  const recompressed = ['jpeg-q94', 'jpeg-q68'].map(id => ({
+    ...byId.get(id), uri: `ph://${id}`, fileSize: 0,
+  }));
+  assert.notStrictEqual(recompressed[0].contentHash, recompressed[1].contentHash);
+  for (const reviewOnly of [false, true]) {
+    const inputs = recompressed.map(p => ({ ...p, dedupeReviewOnly: reviewOnly, isLivePhoto: reviewOnly }));
+    for (const result of [groupSimilarPhotos(inputs), await groupSimilarPhotosAsync(inputs)]) {
+      assert.strictEqual(result.length, 1, 'PhotoKit unknown sizes must not suppress real visual matches');
+      assert.deepStrictEqual(result[0].rejectedPhotoIds, [], 'Recompression and Live Photo matches require review');
+    }
+  }
+  const liveStills = recompressed.map(p => ({ ...p, contentHash: 'same-still', isLivePhoto: true }));
+  const liveGroups = await groupSimilarPhotosAsync(liveStills);
+  assert.strictEqual(liveGroups.length, 1);
+  assert.deepStrictEqual(liveGroups[0].rejectedPhotoIds, []);
+  assert.deepStrictEqual(selectDedupeSignatureCandidates(liveStills.map(p => ({ ...p, contentHash: undefined }))).content, []);
+  const withoutSignals = recompressed.map(p => ({ ...p, contentHash: undefined, visualHash: undefined }));
+  assert.deepStrictEqual(await groupSimilarPhotosAsync(withoutSignals), [], 'Unknown size is not positive evidence');
 
   const highGroups = groups.filter((group) => group.confidence === 'high');
   assert.strictEqual(highGroups.length, 1, 'only the byte-identical fixture group may be high confidence');

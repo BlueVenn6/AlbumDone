@@ -23,6 +23,8 @@ import type {
   PhotoTaskBatch,
   PhotoTaskCheckpoint,
 } from '@photo-manager/shared';
+import { loadCullingAlbumProgress, saveCullingAlbumProgress, clearCullingAlbumProgress } from '../utils/cullingProgressStorage';
+import { selectCullingBatch } from '../utils/cullingBatch';
 import { useKeyboard, buildCullingShortcuts } from '../hooks/useKeyboard';
 import { useLoadPhotos } from '../hooks/useLoadPhotos';
 import { usePhotoThumbnail } from '../hooks/usePhotoThumbnail';
@@ -67,7 +69,7 @@ export function CullingScreen(): React.JSX.Element {
   const { t } = useTranslation();
   const { albumId, albumTitle } = (location.state as { albumId: string; albumTitle: string }) ?? {};
 
-  const { items, allItems, currentIndex, decide, undoLast, isComplete, aiStats, goToNext, goToPrev, history } =
+  const { items, allItems, currentIndex, decide, undoLast, isComplete, goToNext, goToPrev, history } =
     useCullingStore();
   const { photos, loadPhotos, removePhotosById } = usePhotoStore();
 
@@ -80,6 +82,9 @@ export function CullingScreen(): React.JSX.Element {
   const [trashDone, setTrashDone] = useState(false);
   const [batchSize, setBatchSize] = useState<BatchSizeOption>('100');
   const [customBatchSize, setCustomBatchSize] = useState('100');
+  const [reviewedPhotoIds, setReviewedPhotoIds] = useState<string[]>([]);
+  const [hasResumableBatch, setHasResumableBatch] = useState(false);
+  const [progressError, setProgressError] = useState(false);
   const initializedAlbumRef = useRef<string | null>(null);
   const checkpointRef = useRef<PhotoTaskCheckpoint | null>(null);
   const checkpointSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -100,8 +105,12 @@ export function CullingScreen(): React.JSX.Element {
   const queueCheckpointSave = useCallback((checkpoint: PhotoTaskCheckpoint) => {
     checkpointRef.current = checkpoint;
     checkpointSaveQueueRef.current = checkpointSaveQueueRef.current
-      .catch(() => undefined)
-      .then(() => saveDesktopTaskCheckpoint(checkpoint));
+      .then(() => saveDesktopTaskCheckpoint(checkpoint))
+      .then(() => { setProgressError(false); });
+    void checkpointSaveQueueRef.current.catch((error: unknown) => {
+      console.error('[culling] checkpoint could not be saved', error);
+      setProgressError(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -116,6 +125,9 @@ export function CullingScreen(): React.JSX.Element {
       const snapshot = createAlbumSnapshot(albumId, photos, {
         belongsToAlbum: (photo, currentAlbumId) => photo.albumId === currentAlbumId,
       });
+      const albumProgress = await loadCullingAlbumProgress(albumId, snapshot.photos.map((photo) => photo.id));
+      if (cancelled) return;
+      setReviewedPhotoIds(albumProgress?.reviewedPhotoIds ?? []);
       const stored = await loadDesktopTaskCheckpoint('culling', albumId);
       const resumed = stored
         ? resumePhotoTaskCheckpoint(
@@ -141,7 +153,6 @@ export function CullingScreen(): React.JSX.Element {
         return photo ? [{
           photo,
           decision: checkpoint.decisions[photoId] ?? 'pending',
-          aiDecision: 'pending' as CullingDecision,
         }] : [];
       });
       checkpointRef.current = checkpoint;
@@ -155,13 +166,9 @@ export function CullingScreen(): React.JSX.Element {
         isProcessing: false,
         error: null,
         history: [],
-        aiStats: {
-          autoKept: 0,
-          autoDeleted: 0,
-          uncertainCount: cullingItems.filter((item) => item.decision === 'pending').length,
-        },
       });
-      setPhase(cullingItems.every((item) => item.decision !== 'pending') ? 'done' : 'culling');
+      setHasResumableBatch(cullingItems.some((item) => item.decision === 'pending'));
+      setPhase(cullingItems.every((item) => item.decision !== 'pending') ? 'done' : 'intro');
     };
 
     void loadManualCullingItems().catch((err: unknown) => {
@@ -175,7 +182,10 @@ export function CullingScreen(): React.JSX.Element {
     };
   }, [albumId, navigate, photos, photosError, photosLoading]);
 
-  const handleStartCulling = useCallback(() => {
+  const handleStartCulling = useCallback(async (position: 'continue' | 'restart' = 'continue') => {
+    if (hasResumableBatch && position === 'continue') { setPhase('culling'); return; }
+    await checkpointSaveQueueRef.current;
+    if (position === 'restart') await clearCullingAlbumProgress(albumId);
     const snapshot = createAlbumSnapshot(albumId, photos, {
       belongsToAlbum: (photo, currentAlbumId) => photo.albumId === currentAlbumId,
     });
@@ -184,13 +194,13 @@ export function CullingScreen(): React.JSX.Element {
       kind: 'culling',
       albumId,
       snapshotKey: snapshot.snapshotKey,
-      photoIds: snapshot.photos.map((photo) => photo.id),
+      photoIds: selectCullingBatch(snapshot.photos, position === 'restart' ? [] : reviewedPhotoIds, snapshot.count).map((photo) => photo.id),
       batch: getTaskBatch(batchSize, customBatchSize, snapshot.count),
     });
     const photoById = new Map(snapshot.photos.map((photo) => [photo.id, photo]));
     const cullingItems: CullingItem[] = checkpoint.photoIds.flatMap((photoId) => {
       const photo = photoById.get(photoId);
-      return photo ? [{ photo, decision: 'pending', aiDecision: 'pending' }] : [];
+      return photo ? [{ photo, decision: 'pending' }] : [];
     });
     useCullingStore.setState({
       items: cullingItems,
@@ -200,11 +210,14 @@ export function CullingScreen(): React.JSX.Element {
       isProcessing: false,
       error: null,
       history: [],
-      aiStats: { autoKept: 0, autoDeleted: 0, uncertainCount: cullingItems.length },
     });
+    if (position === 'restart') setReviewedPhotoIds([]);
+    setHasResumableBatch(false);
+    setTrashDone(false);
+    setSelectedForDeletion(new Set());
     queueCheckpointSave(checkpoint);
     setPhase(cullingItems.length === 0 ? 'done' : 'culling');
-  }, [albumId, batchSize, customBatchSize, photos, queueCheckpointSave]);
+  }, [albumId, batchSize, customBatchSize, hasResumableBatch, photos, queueCheckpointSave, reviewedPhotoIds]);
 
   const reconcileAlbum = useCallback(async () => {
     const loaded = await window.electronAPI?.getPhotos(albumId, { mode: 'fast' });
@@ -249,12 +262,15 @@ export function CullingScreen(): React.JSX.Element {
     });
 
     if (checkpointRef.current?.status === 'completed') {
+      const reviewed = [...new Set([...reviewedPhotoIds, ...checkpointRef.current.photoIds])];
+      await saveCullingAlbumProgress(albumId, reviewed);
+      setReviewedPhotoIds(reviewed);
       await deleteDesktopTaskCheckpoint('culling', albumId);
       checkpointRef.current = null;
     }
     await reconcileAlbum();
     return result;
-  }, [albumId, reconcileAlbum]);
+  }, [albumId, reconcileAlbum, reviewedPhotoIds]);
 
   // Transition to done when the store marks culling complete OR when the
   // current index has moved past all items (safety-net for edge cases).
@@ -348,12 +364,31 @@ export function CullingScreen(): React.JSX.Element {
     }
   };
 
+  const chooseNextBatch = useCallback(async () => {
+    if (trashing) return;
+    if (useCullingStore.getState().getDeletedPhotos().length > 0 && !trashDone
+      && !window.confirm(t('culling.exitWithPendingDeletions'))) return;
+    await checkpointSaveQueueRef.current;
+    const reviewed = [...new Set([...reviewedPhotoIds,
+      ...useCullingStore.getState().items.filter((item) => item.decision !== 'pending').map((item) => item.photo.id),
+    ])];
+    await saveCullingAlbumProgress(albumId, reviewed);
+    await deleteDesktopTaskCheckpoint('culling', albumId);
+    checkpointRef.current = null;
+    setReviewedPhotoIds(reviewed);
+    setHasResumableBatch(false);
+    setSelectedForDeletion(new Set());
+    setTrashDone(false);
+    setPhase('intro');
+  }, [albumId, reviewedPhotoIds, t, trashDone, trashing]);
+
   const handleExit = useCallback(() => {
-    if (selectedForDeletion.size > 0) {
+    if (trashing) return;
+    if (selectedForDeletion.size > 0 || useCullingStore.getState().getDeletedPhotos().length > 0) {
       if (!window.confirm(t('culling.exitWithPendingDeletions'))) return;
     }
     navigate('/');
-  }, [navigate, selectedForDeletion.size, t]);
+  }, [navigate, selectedForDeletion.size, t, trashing]);
 
   useKeyboard(
     buildCullingShortcuts({
@@ -366,6 +401,11 @@ export function CullingScreen(): React.JSX.Element {
     }),
     { enabled: phase === 'culling' },
   );
+
+  const remainingToReview = useMemo(() => {
+    const reviewed = new Set([...reviewedPhotoIds, ...items.filter((item) => item.decision !== 'pending').map((item) => item.photo.id)]);
+    return photos.reduce((count, photo) => count + (reviewed.has(photo.id) ? 0 : 1), 0);
+  }, [items, photos, reviewedPhotoIds]);
 
   const toggleSelection = useCallback((id: string) => {
     setSelectedForDeletion(prev => {
@@ -413,6 +453,8 @@ export function CullingScreen(): React.JSX.Element {
         <div style={styles.card}>
           <h2 style={styles.heading}>{t('culling.manualTitle')}</h2>
           <p style={styles.subText}>{t('common.photoCount', { count: photos.length })}</p>
+          {reviewedPhotoIds.length > 0 && <p style={styles.subText}>{t('culling.previousProgress', { count: reviewedPhotoIds.length })}</p>}
+          {progressError && <p role="alert">{t('common.progressSaveFailed')}</p>}
           <div style={styles.batchSection}>
             <span style={styles.batchLabel}>{t('culling.batchSize')}</span>
             <div style={styles.batchOptions}>
@@ -445,9 +487,14 @@ export function CullingScreen(): React.JSX.Element {
               />
             )}
           </div>
-          <button onClick={handleStartCulling} style={styles.primaryBtn}>
-            {t('culling.startCulling')}
+          <button data-testid="culling-start" onClick={() => { void handleStartCulling(!hasResumableBatch && remainingToReview === 0 ? 'restart' : 'continue').catch(() => setProgressError(true)); }} style={styles.primaryBtn}>
+            {t(hasResumableBatch ? 'culling.continuePrevious' : remainingToReview === 0 ? 'culling.restartFromBeginning' : 'culling.startCulling')}
           </button>
+          {reviewedPhotoIds.length > 0 && remainingToReview > 0 && <button style={styles.secondaryBtn} onClick={() => {
+            if (!checkpointRef.current || !useCullingStore.getState().getDeletedPhotos().length || window.confirm(t('culling.exitWithPendingDeletions'))) {
+              void handleStartCulling('restart').catch(() => setProgressError(true));
+            }
+          }}>{t('culling.restartFromBeginning')}</button>}
           <button onClick={() => navigate('/')} style={styles.secondaryBtn}>
             {t('common.backToHome')}
           </button>
@@ -498,10 +545,10 @@ export function CullingScreen(): React.JSX.Element {
       <div style={styles.centered}>
         <div style={styles.card}>
           <span style={{ fontSize: '48px' }}>{trashDone ? '✓' : '✓'}</span>
-          <h2 style={styles.heading}>{t('culling.completeTitle')}</h2>
+          <h2 style={styles.heading}>{t('culling.batchCompleteTitle')}</h2>
           <div style={styles.statsRow}>
-            <StatBadge label={t('culling.kept')} value={kept + aiStats.autoKept} color={colors.success} />
-            <StatBadge label={t('culling.deleted')} value={toDelete.length + aiStats.autoDeleted} color={colors.danger} />
+            <StatBadge label={t('culling.kept')} value={kept} color={colors.success} />
+            <StatBadge label={t('culling.deleted')} value={toDelete.length} color={colors.danger} />
           </div>
           {!trashDone && toDelete.length > 0 && (
             <button
@@ -520,7 +567,10 @@ export function CullingScreen(): React.JSX.Element {
           {trashDone && (
             <p style={styles.subText}>{t('culling.trashDone', { count: toDelete.length })}</p>
           )}
-          <button onClick={handleBackToHome} style={styles.secondaryBtn}>
+          <p style={styles.subText}>{t('culling.remainingToReview', { count: remainingToReview })}</p>
+          <button data-testid="culling-next-batch" disabled={trashing} onClick={() => { void chooseNextBatch().catch(() => setProgressError(true)); }} style={styles.primaryBtn}>{t('dedup.chooseBatch')}</button>
+          {progressError && <p role="alert">{t('common.progressSaveFailed')}</p>}
+          <button onClick={handleBackToHome} disabled={trashing} style={styles.secondaryBtn}>
             {t('common.backToHome')}
           </button>
         </div>
@@ -612,7 +662,7 @@ function FullscreenCullingView({
       <div style={styles.topBar}>
         <button onClick={onBack} style={styles.backBtn}>← {displayAlbumTitle}</button>
         <span style={styles.progressText}>
-          {t('culling.progress', { current: currentIndex + 1, total: totalItems })}
+          {t('culling.batchProgress', { current: items.filter((candidate) => candidate.decision !== 'pending').length, total: totalItems })}
         </span>
         <div style={styles.topActions}>
           <button onClick={onUndo} style={styles.iconBtn} title={t('culling.undoHint')}>↩</button>
@@ -630,7 +680,8 @@ function FullscreenCullingView({
             src={zoomed && !originalFailed ? item.photo.uri : preview.src ?? undefined}
             alt={item.photo.filename}
             onError={() => {
-              if (zoomed) setOriginalFailed(true);
+              if (zoomed && !originalFailed) setOriginalFailed(true);
+              else preview.onLoadError();
             }}
             style={{
               ...styles.fullImg,
@@ -672,14 +723,14 @@ function FullscreenCullingView({
 
       {/* Bottom controls */}
       <div style={styles.bottomBar}>
-        <button onClick={onDelete} style={styles.deleteBtn} title={t('culling.deleteHint')}>
+        <button data-testid="culling-delete" onClick={onDelete} style={styles.deleteBtn} title={t('culling.deleteHint')}>
           ✗ {t('common.delete')}
         </button>
         <div style={styles.keyHintRow}>
           <span style={styles.keyHint}>{t('culling.deleteHint')}</span>
           <span style={styles.keyHint}>{t('culling.keepHint')}</span>
         </div>
-        <button onClick={onKeep} style={styles.keepBtn} title={t('culling.keepHint')}>
+        <button data-testid="culling-keep" onClick={onKeep} style={styles.keepBtn} title={t('culling.keepHint')}>
           ✓ {t('common.keep')}
         </button>
       </div>
@@ -688,17 +739,18 @@ function FullscreenCullingView({
 }
 
 function CullingPreviewPreloader({ item }: { item: CullingItem }): React.JSX.Element | null {
-  const { src } = usePhotoThumbnail(
+  const preloaded = usePhotoThumbnail(
     localFileUriToPath(item.photo.uri),
     true,
     item.photo.thumbnailUri,
     1280,
     true,
   );
-  if (!src) return null;
+  if (!preloaded.src) return null;
   return (
     <img
-      src={src}
+      src={preloaded.src}
+      onError={preloaded.onLoadError}
       alt=""
       aria-hidden="true"
       decoding="async"
@@ -1044,13 +1096,15 @@ const ThumbnailImage = memo(function ThumbnailImage({
   shouldLoad: boolean;
   initialSrc?: string | undefined;
 }) {
-  const { src } = usePhotoThumbnail(filePath, shouldLoad, initialSrc);
+  const thumbnail = usePhotoThumbnail(filePath, shouldLoad, initialSrc);
+  const { src } = thumbnail;
 
   return (
     <div style={styles.gridImageFrame}>
       {src ? (
         <img
           src={src}
+          onError={thumbnail.onLoadError}
           alt={alt}
           loading="lazy"
           decoding="async"
@@ -1090,6 +1144,8 @@ function StatBadge({
 const styles: Record<string, React.CSSProperties> = {
   centered: {
     height: '100%',
+    overflowY: 'auto',
+    padding: 24,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1104,8 +1160,10 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     gap: spacing.md,
-    minWidth: '400px',
-    maxWidth: '520px',
+    minWidth: 0,
+    width: 'min(520px, 100%)',
+    maxHeight: '100%',
+    overflowY: 'auto',
   },
   heading: {
     margin: 0,
@@ -1242,6 +1300,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   fullscreenContainer: {
     height: '100%',
+    minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
     background: '#000',
@@ -1250,7 +1309,10 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: `${spacing.sm} ${spacing.md}`,
+    padding: `${spacing.md} ${spacing.md}`,
+    flexWrap: 'wrap',
+    gap: 12,
+    flexShrink: 0,
     background: colors.background,
     borderBottom: `1px solid ${colors.border}`,
   },
@@ -1284,6 +1346,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   imageWrap: {
     flex: 1,
+    minHeight: 0,
     position: 'relative',
     display: 'flex',
     alignItems: 'center',

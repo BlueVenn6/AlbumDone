@@ -62,7 +62,12 @@ type FilenameSequence = {
  * Uses multiple signals: timestamp proximity, file size similarity, dimensions.
  */
 function hasUsableDuplicateSignals(photo: Photo): boolean {
-  return photo.fileSize > 0;
+  return photo.fileSize > 0 || parseVisualHash(photo.visualHash) !== null;
+}
+
+function requiresDedupeReview(photo: Photo): boolean {
+  return Boolean(photo.dedupeReviewOnly || photo.isLivePhoto)
+    || photo.tags.some((tag) => /^(photolive|live[ _-]?photo)$/i.test(tag));
 }
 
 function normalizeFilenameStem(filename: string): string {
@@ -387,7 +392,8 @@ function photoSimilarityScore(a: Photo, b: Photo): SimilarityResult | null {
     return null;
   }
 
-  if (a.contentHash && b.contentHash && a.contentHash === b.contentHash) {
+  if (!requiresDedupeReview(a) && !requiresDedupeReview(b)
+    && a.contentHash && b.contentHash && a.contentHash === b.contentHash) {
     return { score: 0, confidence: 'high' };
   }
 
@@ -396,9 +402,11 @@ function photoSimilarityScore(a: Photo, b: Photo): SimilarityResult | null {
   }
 
   const timeDiff = Math.abs(a.timestamp - b.timestamp);
-  const sizeDelta = Math.abs(a.fileSize - b.fileSize);
-  const sizeRatio =
-    sizeDelta / Math.max(a.fileSize, b.fileSize);
+  const sizesKnown = a.fileSize > 0 && b.fileSize > 0;
+  const sizeDelta = sizesKnown ? Math.abs(a.fileSize - b.fileSize) : Number.POSITIVE_INFINITY;
+  const sizeRatio = sizesKnown
+    ? sizeDelta / Math.max(a.fileSize, b.fileSize)
+    : Number.POSITIVE_INFINITY;
   const dimensionDelta = getDimensionDelta(a, b);
   const aspectRatioDelta = getAspectRatioDelta(a, b);
   const sameDimensions = a.width > 0 && a.height > 0 && a.width === b.width && a.height === b.height;
@@ -487,7 +495,7 @@ function photoSimilarityScore(a: Photo, b: Photo): SimilarityResult | null {
     return null;
   }
 
-  if (!dimensionsKnown || !hasSameOrientation(a, b)) {
+  if (!sizesKnown || !dimensionsKnown || !hasSameOrientation(a, b)) {
     return null;
   }
 
@@ -571,7 +579,7 @@ function getContentHashGroups(photos: Photo[], assigned: Set<string>): Duplicate
   const byContentHash = new Map<string, Photo[]>();
 
   for (const photo of photos) {
-    if (!photo.contentHash) {
+    if (!photo.contentHash || requiresDedupeReview(photo)) {
       continue;
     }
     const matches = byContentHash.get(photo.contentHash) ?? [];
@@ -612,7 +620,11 @@ function getDefaultRejectedPhotoIds(group: Photo[], bestId: string): string[] {
   }
 
   const rejected = group
-    .filter((photo) => photo.id !== bestId && photoSimilarityScore(best, photo)?.confidence === 'high')
+    // Reduced visual signatures can hide different text, edits or expressions.
+    // Only a matching complete static-resource hash may preselect deletion.
+    .filter((photo) => photo.id !== bestId
+      && !requiresDedupeReview(best) && !requiresDedupeReview(photo) && Boolean(best.contentHash)
+      && photo.contentHash === best.contentHash)
     .map((photo) => photo.id);
 
   return rejected;
@@ -630,11 +642,12 @@ export function getSafeRejectedPhotoIds(group: DuplicateGroup): string[] {
     return [];
   }
   const selected = group.photos.find((photo) => photo.id === group.selectedPhotoId);
-  if (!selected?.contentHash) {
+  if (!selected?.contentHash || requiresDedupeReview(selected)) {
     return [];
   }
   return group.photos
-    .filter((photo) => photo.id !== selected.id && photo.contentHash === selected.contentHash)
+    .filter((photo) => photo.id !== selected.id && !requiresDedupeReview(photo)
+      && photo.contentHash === selected.contentHash)
     .map((photo) => photo.id);
 }
 
@@ -643,11 +656,22 @@ export type DedupeSignatureCandidates = {
   visual: Photo[];
 };
 
+export function isAutomaticDedupeEligible(photo: Photo): boolean {
+  return !photo.dedupeExcluded;
+}
+
 export function selectDedupeSignatureCandidates(photos: Photo[]): DedupeSignatureCandidates {
+  photos = photos.filter(isAutomaticDedupeEligible);
   const content = new Map<string, Photo>();
   const byFileSize = new Map<number, Photo[]>();
   for (const photo of photos) {
-    if (photo.contentHash || photo.fileSize <= 0) continue;
+    if (photo.contentHash || requiresDedupeReview(photo)) continue;
+    // PhotoKit has no public file-size API on our minimum supported OS.
+    if (photo.uri.startsWith('ph://') && photo.fileSize <= 0) {
+      content.set(photo.id, photo);
+      continue;
+    }
+    if (photo.fileSize <= 0) continue;
     const group = byFileSize.get(photo.fileSize) ?? [];
     group.push(photo);
     byFileSize.set(photo.fileSize, group);
@@ -672,6 +696,7 @@ export function selectDedupeSignatureCandidates(photos: Photo[]): DedupeSignatur
  * Uses dimension matching, timestamp proximity, and file size similarity.
  */
 export function groupSimilarPhotos(photos: Photo[]): DuplicateGroup[] {
+  photos = photos.filter(isAutomaticDedupeEligible);
   if (photos.length < 2) return [];
 
   const assigned = new Set<string>();
@@ -739,41 +764,67 @@ function addBoundedVisualHashNeighbor(
   photo: Photo,
   target: Photo,
   distance: number,
+  timestampsAreFinite: boolean,
 ): void {
-  output.push({ photo, distance, timeDelta: Math.abs(photo.timestamp - target.timestamp) });
-  output.sort((first, second) => first.distance - second.distance || first.timeDelta - second.timeDelta);
+  const neighbor = { photo, distance, timeDelta: Math.abs(photo.timestamp - target.timestamp) };
+  if (!timestampsAreFinite) {
+    output.push(neighbor);
+    output.sort((first, second) => first.distance - second.distance || first.timeDelta - second.timeDelta);
+    if (output.length > MAX_VISUAL_NEIGHBORS_PER_PHOTO) output.pop();
+    return;
+  }
+  let low = 0;
+  let high = output.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    const existing = output[middle]!;
+    const comparison = existing.distance - neighbor.distance || existing.timeDelta - neighbor.timeDelta;
+    if (!(comparison > 0)) low = middle + 1;
+    else high = middle;
+  }
+  if (low >= MAX_VISUAL_NEIGHBORS_PER_PHOTO) return;
+  output.splice(low, 0, neighbor);
   if (output.length > MAX_VISUAL_NEIGHBORS_PER_PHOTO) {
     output.pop();
   }
 }
 
-function findVisualHashNeighbors(
-  node: VisualHashTreeNode,
+function* iterateVisualHashNeighbors(
+  root: VisualHashTreeNode,
   hash: bigint,
   target: Photo,
   output: VisualHashNeighbor[],
-): void {
-  const distance = hammingDistance(node.hash, hash);
-  if (distance <= VISUAL_HASH_POSSIBLE_THRESHOLD) {
-    for (const photo of node.photos) {
-      addBoundedVisualHashNeighbor(output, photo, target, distance);
+  timestampsAreFinite: boolean,
+): Generator<void, void, void> {
+  const pending = [root];
+  let visited = 0;
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    const distance = hammingDistance(node.hash, hash);
+    if (distance <= VISUAL_HASH_POSSIBLE_THRESHOLD) {
+      for (const photo of node.photos) {
+        addBoundedVisualHashNeighbor(output, photo, target, distance, timestampsAreFinite);
+        if (++visited % 128 === 0) yield;
+      }
     }
-  }
-  const minimum = Math.max(0, distance - VISUAL_HASH_POSSIBLE_THRESHOLD);
-  const maximum = distance + VISUAL_HASH_POSSIBLE_THRESHOLD;
-  for (const [edgeDistance, child] of node.children) {
-    if (edgeDistance >= minimum && edgeDistance <= maximum) {
-      findVisualHashNeighbors(child, hash, target, output);
+    const minimum = Math.max(0, distance - VISUAL_HASH_POSSIBLE_THRESHOLD);
+    const maximum = distance + VISUAL_HASH_POSSIBLE_THRESHOLD;
+    const children: VisualHashTreeNode[] = [];
+    for (const [edgeDistance, child] of node.children) {
+      if (edgeDistance >= minimum && edgeDistance <= maximum) children.push(child);
     }
+    for (let index = children.length - 1; index >= 0; index -= 1) pending.push(children[index]!);
+    if (++visited % 128 === 0) yield;
   }
 }
 
-function getBoundedCandidatePairs(
+function* iterateBoundedCandidatePairs(
   photos: Photo[],
   assigned: Set<string>,
-): DedupeCandidatePair[] {
+): Generator<void, DedupeCandidatePair[], void> {
   const pairs = new Map<string, DedupeCandidatePair>();
   const photoIndex = new Map(photos.map((photo, index) => [photo.id, index]));
+  const timestampsAreFinite = photos.every((photo) => Number.isFinite(photo.timestamp));
   const addPair = (first: Photo, second: Photo, stage: 'visual' | 'metadata') => {
     if (first.id === second.id || assigned.has(first.id) || assigned.has(second.id)) return;
     const firstIndex = photoIndex.get(first.id);
@@ -797,6 +848,7 @@ function getBoundedCandidatePairs(
 
   let visualHashTree: VisualHashTreeNode | null = null;
   for (const photo of photos) {
+    yield;
     if (assigned.has(photo.id)) continue;
     const hash = parseVisualHash(photo.visualHash);
     if (hash === null) continue;
@@ -805,7 +857,7 @@ function getBoundedCandidatePairs(
       continue;
     }
     const neighbors: VisualHashNeighbor[] = [];
-    findVisualHashNeighbors(visualHashTree, hash, photo, neighbors);
+    yield* iterateVisualHashNeighbors(visualHashTree, hash, photo, neighbors, timestampsAreFinite);
     for (const neighbor of neighbors) {
       if (canShareVisualCandidateBucket(neighbor.photo, photo)) {
         addPair(neighbor.photo, photo, 'visual');
@@ -816,6 +868,7 @@ function getBoundedCandidatePairs(
 
   const sequenceBuckets = new Map<string, Array<{ photo: Photo; number: number }>>();
   for (const photo of photos) {
+    yield;
     if (assigned.has(photo.id) || !isCurrentVisualHash(photo.visualHash)) continue;
     const sequence = getFilenameSequence(photo.filename);
     if (!sequence) continue;
@@ -827,6 +880,7 @@ function getBoundedCandidatePairs(
   for (const bucket of sequenceBuckets.values()) {
     bucket.sort((first, second) => first.number - second.number);
     for (let index = 0; index < bucket.length; index += 1) {
+      yield;
       const first = bucket[index]!;
       for (let nextIndex = index + 1; nextIndex < bucket.length; nextIndex += 1) {
         const second = bucket[nextIndex]!;
@@ -844,6 +898,13 @@ function getBoundedCandidatePairs(
   }
 
   return [...pairs.values()];
+}
+
+function getBoundedCandidatePairs(photos: Photo[], assigned: Set<string>): DedupeCandidatePair[] {
+  const iterator = iterateBoundedCandidatePairs(photos, assigned);
+  let step = iterator.next();
+  while (!step.done) step = iterator.next();
+  return step.value;
 }
 
 function addCandidateMatch(matches: Map<string, Set<string>>, firstId: string, secondId: string): void {
@@ -879,8 +940,8 @@ function buildCandidateGroups(
     const queue = [photo.id];
     const component: Photo[] = [];
     assigned.add(photo.id);
-    while (queue.length > 0) {
-      const photoId = queue.shift()!;
+    for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
+      const photoId = queue[queueIndex]!;
       const candidate = photoById.get(photoId);
       if (candidate) component.push(candidate);
       for (const matchedId of matches.get(photoId) ?? []) {
@@ -919,6 +980,7 @@ export async function groupSimilarPhotosAsync(
   photos: Photo[],
   options: DeduplicationAsyncOptions = {},
 ): Promise<DuplicateGroup[]> {
+  photos = photos.filter(isAutomaticDedupeEligible);
   if (photos.length < 2) return [];
   const yieldEvery = Math.max(50, options.yieldEvery ?? 500);
   const assigned = new Set<string>();
@@ -927,11 +989,25 @@ export async function groupSimilarPhotosAsync(
   throwIfDedupeCancelled(options);
   await yieldDedupeWork();
 
-  const candidatePairs = getBoundedCandidatePairs(photos, assigned);
+  const candidateIterator = iterateBoundedCandidatePairs(photos, assigned);
+  let step = candidateIterator.next();
+  let sliceStarted = Date.now();
+  while (!step.done) {
+    throwIfDedupeCancelled(options);
+    if (Date.now() - sliceStarted >= 8) {
+      await yieldDedupeWork();
+      sliceStarted = Date.now();
+    }
+    step = candidateIterator.next();
+  }
+  const candidatePairs: Array<DedupeCandidatePair | undefined> = step.value;
   const totalComparisons = Math.max(1, candidatePairs.length);
   let processed = 0;
   const matches = new Map<string, Set<string>>();
-  for (const pair of candidatePairs) {
+  sliceStarted = Date.now();
+  for (let index = 0; index < candidatePairs.length; index += 1) {
+    const pair = candidatePairs[index]!;
+    candidatePairs[index] = undefined;
     processed += 1;
     const similarity = photoSimilarityScore(pair.first, pair.second)
       ?? (pair.allowSequenceReview
@@ -940,10 +1016,11 @@ export async function groupSimilarPhotosAsync(
     if (similarity) {
       addCandidateMatch(matches, pair.first.id, pair.second.id);
     }
-    if (processed % yieldEvery === 0) {
+    if (processed % yieldEvery === 0 || Date.now() - sliceStarted >= 8) {
       options.onProgress?.({ stage: pair.stage, processed, total: totalComparisons });
       throwIfDedupeCancelled(options);
       await yieldDedupeWork();
+      sliceStarted = Date.now();
     }
   }
 

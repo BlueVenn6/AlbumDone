@@ -23,6 +23,13 @@ export type Photo = {
   fingerprint?: string;
   contentHash?: string;
   visualHash?: string;
+  // PhotoKit version captured by the scan, in seconds since the Unix epoch.
+  modificationTimestamp?: number;
+  dedupeExcluded?: boolean;
+  // Composite/edited assets can be compared visually, but a still-resource
+  // hash cannot prove that the complete assets are identical.
+  dedupeReviewOnly?: boolean;
+  isLivePhoto?: boolean;
   screenshotConfidence?: number;
   screenshotReasons?: string[];
   quality?: PhotoQuality;
@@ -53,5 +60,4 @@ export type CullingDecision = 'keep' | 'delete' | 'pending';
 export type CullingItem = {
   photo: Photo;
   decision: CullingDecision;
-  aiDecision: CullingDecision; // AI pre-processing result
 };

@@ -21,7 +21,7 @@ type Album = {
   totalBytes?: number;
 };
 
-type ModeId = 'dedup' | 'culling' | 'screenshots' | 'yearInReview';
+type ModeId = 'dedup' | 'culling' | 'yearInReview';
 
 type ModeOption = {
   id: ModeId;
@@ -45,13 +45,6 @@ const MODE_OPTIONS: ModeOption[] = [
     route: '/culling',
     color: colors.secondary,
     tint: '#EAF1FF',
-  },
-  {
-    id: 'screenshots',
-    icon: '⌗',
-    route: '/screenshots',
-    color: '#EA580C',
-    tint: '#FFF0E6',
   },
   {
     id: 'yearInReview',
@@ -267,7 +260,7 @@ export function HomeScreen(): React.JSX.Element {
   );
 
   return (
-    <main style={styles.container}>
+    <main className="home-content" style={styles.container}>
       <section style={styles.hero}>
         <div>
           <h1 style={styles.title}>{t('home.library')}</h1>
@@ -285,7 +278,7 @@ export function HomeScreen(): React.JSX.Element {
 
       {error && <div style={styles.errorBox}>{error}</div>}
 
-      <section style={styles.summaryCard}>
+      <section className="home-summary" style={styles.summaryCard}>
         <div style={styles.folderGlyph}>▰</div>
         <div style={styles.summaryPrimary}>
           <span style={styles.metaLabel}>{t('home.currentFolder')}</span>
@@ -384,18 +377,19 @@ function ModeCard({
   const title =
     mode.id === 'yearInReview'
       ? t('yearInReview.title')
-      : t(`home.modes.${mode.id}.title`);
+      : t(mode.id === 'dedup' ? 'home.modes.dedup.title' : 'home.modes.culling.title');
   const subtitle =
     mode.id === 'yearInReview'
       ? t('yearInReviewSubtitle')
-      : t(`home.modes.${mode.id}.subtitle`);
+      : t(mode.id === 'dedup' ? 'home.modes.dedup.shortSubtitle' : 'home.modes.culling.shortSubtitle');
   const action =
     mode.id === 'yearInReview'
-      ? t('yearInReviewAction')
-      : t(`home.modes.${mode.id}.action`);
+      ? t('yearInReview.generate')
+      : t(mode.id === 'dedup' ? 'dedup.startCheck' : 'culling.startCulling');
 
   return (
     <button
+      data-testid={`mode-${mode.id}`}
       onClick={onClick}
       disabled={disabled}
       onMouseEnter={() => setHovered(true)}
@@ -423,7 +417,8 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: '100%',
     background: colors.background,
     overflowY: 'auto',
-    padding: '44px 48px',
+    padding: '28px',
+    containerType: 'inline-size',
     fontFamily: typography.fontFamily,
   },
   hero: {
@@ -431,7 +426,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.lg,
-    marginBottom: '34px',
+    marginBottom: '24px',
+    flexWrap: 'wrap',
   },
   title: {
     margin: 0,
@@ -476,11 +472,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   summaryCard: {
     display: 'grid',
-    gridTemplateColumns: '72px minmax(220px, 1fr) 210px 210px',
+    gridTemplateColumns: '56px minmax(0, 1fr) minmax(130px, 0.8fr) minmax(130px, 0.8fr)',
     alignItems: 'center',
     gap: '24px',
     minHeight: '126px',
-    padding: '24px 32px',
+    padding: '24px',
     background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(230,248,245,0.72))',
     border: `1px solid ${colors.accent}`,
     borderRadius: radius.lg,
@@ -496,6 +492,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: 'inset 0 10px 20px rgba(255,255,255,0.22)',
   },
   summaryPrimary: {
+    minWidth: 0,
     display: 'flex',
     flexDirection: 'column',
     gap: '5px',
@@ -507,6 +504,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: typography.weights.medium,
   },
   summaryTitle: {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
     fontSize: '26px',
     color: colors.text,
     lineHeight: '1.15',
@@ -540,13 +540,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: colors.text,
   },
   modeGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    display: 'flex',
+    flexWrap: 'wrap',
     gap: spacing.md,
     marginBottom: '24px',
   },
   modeCard: {
-    minHeight: '280px',
+    flex: '1 1 210px',
+    minWidth: 0,
+    minHeight: '230px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',

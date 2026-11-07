@@ -1,19 +1,13 @@
-import { ipcMain, app, dialog, BrowserWindow, shell, safeStorage, type IpcMainInvokeEvent } from 'electron';
+import { ipcMain, app, dialog, BrowserWindow, shell, type IpcMainInvokeEvent } from 'electron';
 import { createHash } from 'crypto';
 import { fork } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-  LLMClient,
   computeVisualHashSignature,
+  i18next,
+  initI18n,
   detectScreenshotCandidate,
-  executeInstruction,
-  inferProviderMode,
-  modelSupportsVision,
-  type LLMMessage,
-  type LLMProvider,
-  type ProviderConfig,
-  type ProviderMode,
 } from '@photo-manager/shared';
 import { getLocalIp, startLanServer, stopLanServer, getLanServerUrl } from './lanServer';
 import { normalizeDesktopLocale, readSystemDisplayLocale } from './locale';
@@ -26,23 +20,8 @@ import {
 } from './localFileAccess';
 import { getExistingThumbnailPath, getThumbnailCacheRoot, getPhotoCacheOwnerPrefix, purgePhotoCacheFiles, removeLegacyPhotoCacheFiles } from './thumbnailCache';
 import { deletePhotoFiles, type PhotoDeletionMode } from './photoDeletion';
-const { generateYearInReview } = require('./yearInReview') as {
-  generateYearInReview: (
-    photos: Array<{
-      uri: string;
-      filename: string;
-      timestamp?: number;
-      width?: number;
-      height?: number;
-      fileSize?: number;
-      isScreenshot?: boolean;
-      thumbnailUri?: string;
-    }>,
-    outputDir: string,
-    timeMode?: 'rolling' | 'calendar',
-    locale?: string,
-  ) => Promise<unknown>;
-};
+import { generateYearInReview, prepareYearReview, exportYearReview } from './yearInReview';
+import type { ReviewMonth, YearReviewTimeMode } from '@photo-manager/shared';
 
 type IpcErrorResponse = {
   __ipcError: true;
@@ -56,7 +35,6 @@ type IpcErrorResponse = {
 const HIGH_RISK_CHANNELS = new Set([
   'fs:readDirectory',
   'fs:readImageAsBase64',
-  'fs:readImagePreviewAsBase64',
   'fs:getPhotoBase64',
   'fs:moveToTrash',
   'fs:deleteFiles',
@@ -71,15 +49,9 @@ const HIGH_RISK_CHANNELS = new Set([
   'tasks:getCheckpoint',
   'tasks:saveCheckpoint',
   'tasks:deleteCheckpoint',
-  'settings:setApiKey',
   'network:startLanServer',
-  'llm:testConnection',
-  'llm:chat',
-  'llm:chatWithImage',
-  'screenshot:executeInstruction',
-  'screenshot:cancelInstruction',
-  'ocr:extractText',
   'yearInReview:generate',
+  'yearInReview:export',
 ]);
 
 const IMAGE_EXTS = new Set([
@@ -98,23 +70,16 @@ const IMAGE_EXTS = new Set([
 ]);
 const MAX_BASE64_IMAGE_BYTES = 24 * 1024 * 1024;
 const MAX_VISION_SOURCE_IMAGE_BYTES = 256 * 1024 * 1024;
-const MAX_VISION_PASSTHROUGH_BYTES = 4 * 1024 * 1024;
 const MAX_SCAN_PHOTOS = 20000;
 const SCAN_FILE_CONCURRENCY = 16;
-const MAX_LLM_BODY_BYTES = 12 * 1024 * 1024;
-const CREDENTIAL_OPERATION_TIMEOUT_MS = 5000;
-const TEST_CONNECTION_TIMEOUT_MS = 25000;
 const MAX_VISUAL_HASH_PHOTOS = 6000;
 const VISUAL_HASH_SIZE = 32;
 const FINGERPRINT_SAMPLE_BYTES = 64 * 1024;
 const DIMENSION_HEADER_BYTES = 256 * 1024;
 const JPEG_DIMENSION_FALLBACK_BYTES = 2 * 1024 * 1024;
-const SECRET_QUERY_PARAMS = new Set(['key', 'api_key', 'token', 'access_token']);
-const validProviderPattern = /^[a-z0-9_-]{1,40}$/i;
 const validScanIdPattern = /^[a-z0-9_-]{8,120}$/i;
 let preferredLocalePromise: Promise<string | null> | null = null;
 const photoScanControllers = new Map<string, AbortController>();
-const screenshotInstructionControllers = new Map<string, AbortController>();
 
 function getPreferredLocale(): Promise<string | null> {
   preferredLocalePromise ??= readSystemDisplayLocale();
@@ -230,44 +195,6 @@ function sanitizeIpcPayload<T>(value: T): T {
     return result as T;
   }
   return value;
-}
-
-function assertSafeEndpointUrl(baseUrl: unknown): string | undefined {
-  if (baseUrl === undefined || baseUrl === null || baseUrl === '') {
-    return undefined;
-  }
-  const parsedUrl = new URL(assertString(baseUrl, 'baseUrl'));
-  if (!['https:', 'http:'].includes(parsedUrl.protocol)) {
-    throw new Error('Only HTTP(S) LLM endpoints are allowed.');
-  }
-  for (const key of parsedUrl.searchParams.keys()) {
-    if (SECRET_QUERY_PARAMS.has(key.toLowerCase())) {
-      throw new Error('LLM endpoint URLs must not include API keys or tokens in query parameters.');
-    }
-  }
-  if (parsedUrl.protocol === 'http:' && !isLoopbackHostname(parsedUrl.hostname)) {
-    throw new Error('Plain HTTP LLM endpoints are limited to localhost.');
-  }
-  return parsedUrl.toString();
-}
-
-function assertLLMProvider(value: unknown): LLMProvider {
-  const provider = assertString(value, 'provider') as LLMProvider;
-  if (!validProviderPattern.test(provider)) {
-    throw new Error('Invalid provider name.');
-  }
-  return provider;
-}
-
-function assertLlmMessages(value: unknown): LLMMessage[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 50) {
-    throw new Error('LLM messages must be a non-empty array with at most 50 entries.');
-  }
-  const serialized = JSON.stringify(value);
-  if (Buffer.byteLength(serialized, 'utf-8') > MAX_LLM_BODY_BYTES) {
-    throw new Error('LLM request body is too large.');
-  }
-  return value as LLMMessage[];
 }
 
 function assertParamsArray(value: unknown): unknown[] {
@@ -492,14 +419,6 @@ async function getFileFingerprint(
   }
 
   return hash.digest('hex');
-}
-
-// Lazy-loaded keytar (optional secure credential store)
-let keytar: typeof import('keytar') | null = null;
-try {
-  keytar = require('keytar') as typeof import('keytar');
-} catch {
-  logger.warn('native', 'keytar not available, using Electron safeStorage fallback for API keys');
 }
 
 // Lazy-loaded better-sqlite3 — native module must be rebuilt for each Electron ABI.
@@ -1390,46 +1309,6 @@ export async function runPhotoFolderProgressBenchmark(folderPath: string): Promi
   };
 }
 
-export async function runVisionPreviewBenchmark(filePath: string): Promise<{
-  sourceBytes: number;
-  previewBytes: number;
-  width: number;
-  height: number;
-  firstMs: number;
-  cachedMs: number;
-  reusedCachePath: boolean;
-  sourcePassthrough: boolean;
-  mimeType: string;
-}> {
-  const resolvedPath = path.resolve(assertString(filePath, 'filePath'));
-  const sourceStats = await fs.promises.stat(resolvedPath);
-  const firstStartedAt = performance.now();
-  const first = await getVisionPreviewPayload(resolvedPath, 1536);
-  const firstMs = performance.now() - firstStartedAt;
-  const cachedStartedAt = performance.now();
-  const cached = await getVisionPreviewPayload(resolvedPath, 1536);
-  const cachedMs = performance.now() - cachedStartedAt;
-  if (
-    first.data.length <= 0
-    || first.width <= 0
-    || first.height <= 0
-    || Math.max(first.width, first.height) > 1536
-  ) {
-    throw new Error('Vision preview benchmark produced an invalid sampled image.');
-  }
-  return {
-    sourceBytes: sourceStats.size,
-    previewBytes: first.data.length,
-    width: first.width,
-    height: first.height,
-    firstMs,
-    cachedMs,
-    reusedCachePath: first.cachePath === cached.cachePath,
-    sourcePassthrough: first.cachePath === resolvedPath,
-    mimeType: first.mimeType,
-  };
-}
-
 const thumbnailTaskQueue: ThumbnailTask[] = [];
 const thumbnailJobs = new Map<string, Promise<string>>();
 let activeThumbnailTasks = 0;
@@ -2019,97 +1898,6 @@ async function getThumbnailCachePath(
   return path.join(getThumbnailRoot(), `${getPhotoCacheOwnerPrefix(normalizedPath)}${cacheKey}.jpg`);
 }
 
-async function ensureVisionPreview(filePath: string, maxDimension: number): Promise<string> {
-  const normalizedPath = normalizeNativePath(filePath);
-  const cachePath = await getThumbnailCachePath(normalizedPath, maxDimension, 'vision-preview-v1');
-  try {
-    const cacheStats = await fs.promises.stat(cachePath);
-    if (cacheStats.size > 0) {
-      return cachePath;
-    }
-  } catch {
-    // Cache miss - generate below.
-  }
-
-  const inFlight = thumbnailJobs.get(cachePath);
-  if (inFlight) {
-    return inFlight;
-  }
-
-  const nextJob = enqueueThumbnailTask(async () => {
-    await fs.promises.mkdir(path.dirname(cachePath), { recursive: true });
-    const sharp = loadSharpModule();
-    let outputBuffer: Buffer;
-    if (sharp) {
-      outputBuffer = await sharp(normalizedPath)
-        .rotate()
-        .resize(maxDimension, maxDimension, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 86 })
-        .toBuffer();
-    } else {
-      const { createCanvas, loadImage } = loadCanvasModule();
-      const image = await loadCanvasImage(loadImage, normalizedPath);
-      const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
-      const width = Math.max(1, Math.round(image.width * scale));
-      const height = Math.max(1, Math.round(image.height * scale));
-      const canvas = createCanvas(width, height);
-      canvas.getContext('2d').drawImage(image, 0, 0, width, height);
-      outputBuffer = canvas.toBuffer('image/jpeg', { quality: 0.86 });
-    }
-    if (outputBuffer.length === 0) {
-      throw new Error('Vision preview encoder returned an empty image.');
-    }
-    await fs.promises.writeFile(cachePath, outputBuffer);
-    return cachePath;
-  });
-  thumbnailJobs.set(cachePath, nextJob);
-  try {
-    return await nextJob;
-  } finally {
-    thumbnailJobs.delete(cachePath);
-  }
-}
-
-async function getVisionPreviewPayload(
-  filePath: string,
-  maxDimension: number,
-): Promise<{
-  data: Buffer;
-  mimeType: string;
-  width: number;
-  height: number;
-  cachePath: string;
-}> {
-  const normalizedPath = normalizeNativePath(filePath);
-  const ext = path.extname(normalizedPath).toLowerCase();
-  const sourceStats = await fs.promises.stat(normalizedPath);
-  if (
-    sourceStats.size <= MAX_VISION_PASSTHROUGH_BYTES
-    && ['.png', '.webp'].includes(ext)
-  ) {
-    const dimensions = await getImageDimensions(normalizedPath, ext);
-    if (Math.max(dimensions.width, dimensions.height) <= maxDimension) {
-      return {
-        data: await fs.promises.readFile(normalizedPath),
-        mimeType: ext === '.png' ? 'image/png' : 'image/webp',
-        width: dimensions.width,
-        height: dimensions.height,
-        cachePath: normalizedPath,
-      };
-    }
-  }
-
-  const previewPath = await ensureVisionPreview(normalizedPath, maxDimension);
-  const dimensions = await getImageDimensions(previewPath, '.jpg');
-  return {
-    data: await fs.promises.readFile(previewPath),
-    mimeType: 'image/jpeg',
-    width: dimensions.width,
-    height: dimensions.height,
-    cachePath: previewPath,
-  };
-}
-
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw new Error('Task cancelled.');
@@ -2489,19 +2277,6 @@ export function setupIpcHandlers(): void {
     },
   );
 
-  safeHandle(
-    'fs:readImagePreviewAsBase64',
-    async (_event, filePath: string, maxDimension = 1536) => {
-      const { filePath: allowedPath } = await assertReadableImageFile(
-        filePath,
-        'readImagePreviewAsBase64',
-        MAX_VISION_SOURCE_IMAGE_BYTES,
-      );
-      const normalizedMaxDimension = Math.max(512, Math.min(2048, Math.round(maxDimension) || 1536));
-      const preview = await getVisionPreviewPayload(allowedPath, normalizedMaxDimension);
-      return { base64: preview.data.toString('base64'), mimeType: preview.mimeType };
-    },
-  );
 
   safeHandle(
     'fs:getThumbnail',
@@ -2728,189 +2503,6 @@ export function setupIpcHandlers(): void {
     },
   );
 
-  // ----- Settings / Credential Store -----
-
-  const SERVICE_NAME = 'photo-manager';
-  const fallbackCredentialPath = () => path.join(app.getPath('userData'), 'settings.json');
-  const credentialKey = (provider: string) => `apikey_${provider}`;
-
-  async function readFallbackCredentialFile(): Promise<Record<string, string>> {
-    try {
-      return JSON.parse(
-        await fs.promises.readFile(fallbackCredentialPath(), 'utf-8'),
-      ) as Record<string, string>;
-    } catch {
-      return {};
-    }
-  }
-
-  async function writeFallbackCredentialFile(data: Record<string, string>): Promise<void> {
-    await fs.promises.writeFile(fallbackCredentialPath(), JSON.stringify(data, null, 2));
-  }
-
-  function encryptFallbackApiKey(apiKey: string): string {
-    if (!safeStorage.isEncryptionAvailable()) {
-      throw new Error('Electron secure credential storage is not available.');
-    }
-    return `safeStorage:${safeStorage.encryptString(apiKey).toString('base64')}`;
-  }
-
-  function decryptFallbackApiKey(value: string): string {
-    if (!value.startsWith('safeStorage:')) {
-      throw new Error('Saved API key must be re-entered because it was stored by an older insecure format.');
-    }
-    if (!safeStorage.isEncryptionAvailable()) {
-      throw new Error('Electron secure credential storage is not available.');
-    }
-    const encrypted = Buffer.from(value.slice('safeStorage:'.length), 'base64');
-    return safeStorage.decryptString(encrypted);
-  }
-
-  async function migrateLegacyPlaintextFallbackCredentials(): Promise<void> {
-    const data = await readFallbackCredentialFile();
-    let changed = false;
-    let legacyCount = 0;
-
-    for (const [key, value] of Object.entries(data)) {
-      if (!key.startsWith('apikey_') || typeof value !== 'string' || value.startsWith('safeStorage:')) {
-        continue;
-      }
-      legacyCount += 1;
-      if (!safeStorage.isEncryptionAvailable()) {
-        delete data[key];
-        changed = true;
-        continue;
-      }
-      data[key] = encryptFallbackApiKey(value);
-      changed = true;
-    }
-
-    if (changed) {
-      await writeFallbackCredentialFile(data);
-      logger.warn('native', 'legacy plaintext API key entries migrated or removed', { count: legacyCount });
-    }
-  }
-
-  void migrateLegacyPlaintextFallbackCredentials().catch((err) => {
-    logger.error('native', 'legacy API key migration failed', err);
-  });
-
-  async function readStoredApiKey(provider: LLMProvider): Promise<string | null> {
-    if (
-      process.env.NODE_ENV === 'development'
-      && process.env.ALBUMDONE_TEST_DISABLE_STORED_KEYS === '1'
-    ) {
-      return null;
-    }
-    if (keytar) {
-      return raceWithTimeout(
-        keytar.getPassword(SERVICE_NAME, provider),
-        CREDENTIAL_OPERATION_TIMEOUT_MS,
-        'Secure credential store timed out while reading the API key.',
-      );
-    }
-    const data = await readFallbackCredentialFile();
-    const key = credentialKey(provider);
-    const stored = data[key];
-    if (!stored) {
-      return null;
-    }
-    if (!stored.startsWith('safeStorage:')) {
-      delete data[key];
-      await writeFallbackCredentialFile(data);
-      logger.warn('native', 'removed legacy plaintext API key entry', { provider });
-      return null;
-    }
-    return decryptFallbackApiKey(stored);
-  }
-
-  function maskApiKey(apiKey: string | null): string | undefined {
-    const trimmed = apiKey?.trim();
-    if (!trimmed) {
-      return undefined;
-    }
-    if (trimmed.length <= 8) {
-      return '••••';
-    }
-    return `${trimmed.slice(0, 3)}••••${trimmed.slice(-4)}`;
-  }
-
-  async function getApiKeyStatus(provider: LLMProvider): Promise<{
-    provider: LLMProvider;
-    hasApiKey: boolean;
-    maskedKey?: string;
-  }> {
-    const apiKey = await readStoredApiKey(provider);
-    const maskedKey = maskApiKey(apiKey);
-    return {
-      provider,
-      hasApiKey: Boolean(apiKey?.trim()),
-      ...(maskedKey ? { maskedKey } : {}),
-    };
-  }
-
-  function createMainProviderConfig(input: {
-    provider: LLMProvider;
-    apiKey: string;
-    baseUrl?: string | undefined;
-    model: string;
-    supportsVision: boolean;
-    mode: ProviderMode;
-  }): ProviderConfig {
-    return {
-      provider: input.provider,
-      apiKey: input.apiKey,
-      model: input.model,
-      supportsVision: input.supportsVision,
-      mode: input.mode,
-      ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
-    };
-  }
-
-  safeHandle('settings:getApiKeyStatus', async (_event, provider: string) => {
-    return getApiKeyStatus(assertLLMProvider(provider));
-  });
-
-  safeHandle('settings:getApiKey', async (_event, provider: string) => {
-    return getApiKeyStatus(assertLLMProvider(provider));
-  });
-
-  safeHandle(
-    'settings:setApiKey',
-    async (_event, provider: string, apiKey: string) => {
-      const safeProvider = assertLLMProvider(provider);
-      if (typeof apiKey !== 'string' || apiKey.length > 10000) {
-        throw new Error('Invalid API key.');
-      }
-      if (keytar) {
-        await raceWithTimeout(
-          keytar.setPassword(SERVICE_NAME, safeProvider, apiKey),
-          CREDENTIAL_OPERATION_TIMEOUT_MS,
-          'Secure credential store timed out while saving the API key.',
-        );
-        return;
-      }
-      const data = await readFallbackCredentialFile();
-      data[credentialKey(safeProvider)] = encryptFallbackApiKey(apiKey);
-      await writeFallbackCredentialFile(data);
-    },
-  );
-
-  safeHandle('settings:deleteApiKey', async (_event, provider: string) => {
-    const safeProvider = assertLLMProvider(provider);
-    if (keytar) {
-      await raceWithTimeout(
-        keytar.deletePassword(SERVICE_NAME, safeProvider),
-        CREDENTIAL_OPERATION_TIMEOUT_MS,
-        'Secure credential store timed out while deleting the API key.',
-      );
-      return;
-    }
-    const data = await readFallbackCredentialFile();
-    delete data[credentialKey(safeProvider)];
-    await writeFallbackCredentialFile(data);
-  });
-
   // ----- Network / LAN Server -----
 
   safeHandle('network:getLocalIp', () => {
@@ -3044,14 +2636,10 @@ export function setupIpcHandlers(): void {
   safeHandle('dialog:selectFolder', async (_event) => {
     const win = BrowserWindow.getFocusedWindow();
     const locale = normalizeDesktopLocale(await getPreferredLocale());
-    const titleByLocale = {
-      en: 'Select Photo Folder',
-      'zh-Hans': '选择照片文件夹',
-      'zh-Hant': '選擇照片資料夾',
-    };
+    await initI18n(locale);
     const result = await dialog.showOpenDialog(win ?? new BrowserWindow({ show: false }), {
       properties: ['openDirectory'],
-      title: titleByLocale[locale],
+      title: i18next.t('home.browseFolder'),
     });
     const selectedPath = result.canceled ? null : (result.filePaths[0] ?? null);
     if (selectedPath) {
@@ -3095,14 +2683,14 @@ export function setupIpcHandlers(): void {
     const nativePaths = [...new Set(assertStringArray(filePaths, 'filePaths')
       .map((filePath) => assertImagePath(filePath, 'deleteFiles')))];
     if (mode === 'permanent' && nativePaths.length > 0) {
-      const chinese = (await getPreferredLocale())?.startsWith('zh');
+      await initI18n(await getPreferredLocale() ?? 'en');
       const parent = BrowserWindow.fromWebContents(event.sender);
       const options = {
         type: 'warning' as const,
-        title: chinese ? '永久删除照片' : 'Permanently delete photos',
-        message: chinese ? `永久删除 ${nativePaths.length} 张照片并释放空间？` : `Permanently delete ${nativePaths.length} photos and release storage?`,
-        detail: chinese ? '这会删除原文件及对应的应用缓存，不经过回收站，无法撤销。' : 'This removes the originals and their app caches, bypasses the recycle bin, and cannot be undone.',
-        buttons: chinese ? ['取消', '永久删除'] : ['Cancel', 'Delete permanently'],
+        title: i18next.t('common.permanentDelete'),
+        message: i18next.t('dedup.confirmDelete', { count: nativePaths.length }),
+        detail: i18next.t('desktop.permanentDetail'),
+        buttons: [i18next.t('common.cancel'), i18next.t('common.permanentDelete')],
         defaultId: 0,
         cancelId: 0,
         noLink: true,
@@ -3189,43 +2777,7 @@ export function setupIpcHandlers(): void {
     },
   );
 
-  // ----- Screenshot Archive -----
-  // Saves an LLM instruction result paired with a photo into the local SQLite DB.
-  safeHandle(
-    'app:saveToArchive',
-    async (_event, photoId: string, content: string, instruction: string) => {
-      try {
-        const safePhotoId = assertString(photoId, 'photoId');
-        const safeContent = assertString(content, 'content').slice(0, 200000);
-        const safeInstruction = assertString(instruction, 'instruction').slice(0, 10000);
-        const database = getDb();
-        database
-          .prepare(
-            `CREATE TABLE IF NOT EXISTS screenshot_archive (
-               id TEXT PRIMARY KEY,
-               photoId TEXT NOT NULL,
-               content TEXT NOT NULL,
-               instruction TEXT NOT NULL,
-               createdAt INTEGER NOT NULL
-             )`,
-          )
-          .run();
-        const id = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-        database
-          .prepare(
-            'INSERT INTO screenshot_archive (id, photoId, content, instruction, createdAt) VALUES (?, ?, ?, ?, ?)',
-          )
-          .run(id, safePhotoId, safeContent, safeInstruction, Date.now());
-        return { success: true, id };
-      } catch (err) {
-        logger.error('ipc', 'saveToArchive error', err);
-        return { success: false, error: err instanceof Error ? err.message : String(err) };
-      }
-    },
-  );
-
-  // ----- App Info -----
-
+  // ----- App information -----
   safeHandle('app:getVersion', () => {
     return app.getVersion();
   });
@@ -3251,6 +2803,12 @@ export function setupIpcHandlers(): void {
     return { success: true };
   });
 
+  safeHandle('app:setLocale', async (_event, locale: unknown) => {
+    preferredLocalePromise = Promise.resolve(normalizeDesktopLocale(assertString(locale, 'locale')));
+    await initI18n(await preferredLocalePromise ?? 'en');
+    return true;
+  });
+
   safeHandle(
     'yearInReview:generate',
     async (
@@ -3265,8 +2823,10 @@ export function setupIpcHandlers(): void {
         isScreenshot?: boolean;
         thumbnailUri?: string;
       }>,
-      timeMode: 'rolling' | 'calendar' = 'rolling',
+      timeMode: YearReviewTimeMode = 'rolling',
+      prepareOnly = false,
     ) => {
+      if (!['rolling', 'previousYear', 'calendar'].includes(timeMode)) throw new Error('Invalid review range.');
       if (!Array.isArray(photos) || photos.length === 0 || photos.length > MAX_SCAN_PHOTOS) {
         throw new Error(`Year In Review requires 1-${MAX_SCAN_PHOTOS} photos.`);
       }
@@ -3299,271 +2859,24 @@ export function setupIpcHandlers(): void {
       });
       const outputDir = getAppOutputRoot();
       const locale = await getPreferredLocale();
-      return generateYearInReview(safePhotos, outputDir, timeMode, locale ?? 'en');
+      return prepareOnly
+        ? prepareYearReview(safePhotos, timeMode, locale ?? 'en')
+        : generateYearInReview(safePhotos, outputDir, timeMode, locale ?? 'en');
     },
   );
 
-  // ----- LLM IPC bridge (avoids CORS in renderer) -----
-
-  safeHandle(
-    'llm:testConnection',
-    async (
-      _event,
-      params: {
-        provider: string;
-        baseUrl?: string;
-        model: string;
-        supportsVision?: boolean;
-        mode?: ProviderMode;
-        apiKey?: string;
-      },
-    ) => {
-      if (!params || typeof params !== 'object') {
-        throw new Error('Invalid LLM request params.');
-      }
-      const provider = assertLLMProvider(params.provider);
-      const model = assertString(params.model, 'model');
-      const baseUrl = assertSafeEndpointUrl(params.baseUrl);
-      const mode = inferProviderMode(provider, baseUrl);
-      const temporaryApiKey = typeof params.apiKey === 'string' ? params.apiKey.trim() : '';
-      const storedApiKey = temporaryApiKey || await readStoredApiKey(provider);
-      if (!storedApiKey?.trim()) {
-        throw new Error('API key is not configured. Complete setup in Settings first.');
-      }
-      const supportsVision = params.supportsVision ?? (
-        mode === 'proxy' ? true : modelSupportsVision(provider, model, baseUrl)
-      );
-      const client = new LLMClient(createMainProviderConfig({
-        provider,
-        apiKey: storedApiKey,
-        baseUrl,
-        model,
-        supportsVision,
-        mode,
-      }));
-      return sanitizeIpcPayload(await raceWithTimeout(
-        client.testConnection(),
-        TEST_CONNECTION_TIMEOUT_MS,
-        'API connection test exceeded 25 seconds.',
-      ));
-    },
-  );
-
-  safeHandle(
-    'llm:chat',
-    async (
-      _event,
-      params: {
-        provider: string;
-        baseUrl?: string;
-        model: string;
-        supportsVision?: boolean;
-        mode?: ProviderMode;
-        messages: LLMMessage[];
-        options?: { temperature?: number; maxTokens?: number };
-      },
-    ) => {
-      if (!params || typeof params !== 'object') {
-        throw new Error('Invalid LLM request params.');
-      }
-      const provider = assertLLMProvider(params.provider);
-      const model = assertString(params.model, 'model');
-      const baseUrl = assertSafeEndpointUrl(params.baseUrl);
-      const mode = inferProviderMode(provider, baseUrl);
-      const apiKey = await readStoredApiKey(provider);
-      if (!apiKey?.trim()) {
-        throw new Error('API key is not configured. Complete setup in Settings first.');
-      }
-      const client = new LLMClient(createMainProviderConfig({
-        provider,
-        apiKey,
-        baseUrl,
-        model,
-        supportsVision: params.supportsVision ?? modelSupportsVision(provider, model, baseUrl),
-        mode,
-      }));
-      return sanitizeIpcPayload(await client.chat(assertLlmMessages(params.messages), params.options ?? {}));
-    },
-  );
-
-  safeHandle(
-    'llm:chatWithImage',
-    async (
-      _event,
-      params: {
-        provider: string;
-        baseUrl?: string;
-        model: string;
-        supportsVision?: boolean;
-        mode?: ProviderMode;
-        prompt: string;
-        imageBase64: string;
-        mimeType: string;
-        options?: { temperature?: number; maxTokens?: number };
-      },
-    ) => {
-      if (!params || typeof params !== 'object') {
-        throw new Error('Invalid LLM image request params.');
-      }
-      const provider = assertLLMProvider(params.provider);
-      const model = assertString(params.model, 'model');
-      const baseUrl = assertSafeEndpointUrl(params.baseUrl);
-      const mode = inferProviderMode(provider, baseUrl);
-      const prompt = assertString(params.prompt, 'prompt');
-      const imageBase64 = assertString(params.imageBase64, 'imageBase64');
-      const mimeType = assertString(params.mimeType, 'mimeType');
-      if (Buffer.byteLength(imageBase64, 'utf-8') > MAX_LLM_BODY_BYTES) {
-        throw new Error('LLM image payload is too large.');
-      }
-      const apiKey = await readStoredApiKey(provider);
-      if (!apiKey?.trim()) {
-        throw new Error('API key is not configured. Complete setup in Settings first.');
-      }
-      const client = new LLMClient(createMainProviderConfig({
-        provider,
-        apiKey,
-        baseUrl,
-        model,
-        supportsVision: params.supportsVision ?? true,
-        mode,
-      }));
-      return sanitizeIpcPayload(await client.chatWithImage(prompt, imageBase64, mimeType, params.options ?? {}));
-    },
-  );
-
-  safeHandle(
-    'screenshot:executeInstruction',
-    async (
-      _event,
-      params: {
-        provider: string;
-        baseUrl?: string;
-        model: string;
-        supportsVision?: boolean;
-        mode?: ProviderMode;
-        instruction: string;
-        imageBase64: string;
-        mimeType: string;
-        languageCode?: string;
-        requestId: string;
-      },
-    ) => {
-      if (!params || typeof params !== 'object') {
-        throw new Error('Invalid screenshot instruction params.');
-      }
-      const provider = assertLLMProvider(params.provider);
-      const model = assertString(params.model, 'model');
-      const baseUrl = assertSafeEndpointUrl(params.baseUrl);
-      const mode = inferProviderMode(provider, baseUrl);
-      const instruction = assertString(params.instruction, 'instruction');
-      const imageBase64 = assertString(params.imageBase64, 'imageBase64');
-      const mimeType = assertString(params.mimeType, 'mimeType');
-      const requestId = assertString(params.requestId, 'requestId');
-      if (!validScanIdPattern.test(requestId)) {
-        throw new Error('Invalid screenshot request ID.');
-      }
-      if (screenshotInstructionControllers.has(requestId)) {
-        throw new Error('Screenshot request ID is already active.');
-      }
-      if (Buffer.byteLength(imageBase64, 'utf-8') > MAX_LLM_BODY_BYTES) {
-        throw new Error('Screenshot payload is too large.');
-      }
-      const apiKey = await readStoredApiKey(provider);
-      if (!apiKey?.trim()) {
-        throw new Error('API key is not configured. Complete setup in Settings first.');
-      }
-      const client = new LLMClient(createMainProviderConfig({
-        provider,
-        apiKey,
-        baseUrl,
-        model,
-        supportsVision: params.supportsVision ?? true,
-        mode,
-      }));
-      const controller = new AbortController();
-      screenshotInstructionControllers.set(requestId, controller);
-      try {
-        const content = await executeInstruction(
-          imageBase64,
-          mimeType,
-          instruction,
-          client,
-          typeof params.languageCode === 'string' ? params.languageCode : undefined,
-          { signal: controller.signal, timeoutMs: 60000 },
-        );
-        return sanitizeIpcPayload({ content });
-      } finally {
-        screenshotInstructionControllers.delete(requestId);
-      }
-    },
-  );
-
-  safeHandle('screenshot:cancelInstruction', (_event, requestId: string) => {
-    const normalizedRequestId = assertString(requestId, 'requestId');
-    if (!validScanIdPattern.test(normalizedRequestId)) {
-      throw new Error('Invalid screenshot request ID.');
-    }
-    const controller = screenshotInstructionControllers.get(normalizedRequestId);
-    controller?.abort();
-    return { cancelled: Boolean(controller) };
+  safeHandle('yearInReview:export', async (_event, months: ReviewMonth[]) => {
+    if (!Array.isArray(months) || months.length !== 12) throw new Error('Invalid review.');
+    const safeMonths = months.map((month, index) => {
+      if (!month || typeof month !== 'object' || !Number.isInteger(month.monthId) ||
+          typeof month.quote !== 'string' || month.quote.length > 500) throw new Error(`Invalid review month ${index}.`);
+      const photo = month.photo ? {
+        ...month.photo,
+        uri: toLocalFileUri(assertImagePath(month.photo.uri, 'yearInReviewExport')),
+      } : null;
+      return { key: `month:${month.monthId}`, monthId: month.monthId, quote: month.quote, photo, candidates: [] };
+    });
+    return exportYearReview(safeMonths, getAppOutputRoot(), await getPreferredLocale() ?? 'en');
   });
-
-  // ----- OCR (Tesseract in Node.js main process — correct file path, no WASM/CSP issues) -----
-
-  safeHandle(
-    'ocr:extractText',
-    async (_event, filePath: string, lang: string = 'chi_sim+eng') => {
-      const { filePath: allowedPath } = await assertReadableImageFile(filePath, 'ocr', MAX_BASE64_IMAGE_BYTES);
-      const requestedLangs = assertString(lang, 'lang')
-        .split('+')
-        .map((value) => value.trim())
-        .filter((value): value is string => value.length > 0);
-      if (
-        requestedLangs.length === 0
-        || requestedLangs.some((code) => !['chi_sim', 'eng'].includes(code))
-      ) {
-        throw new Error('Unsupported OCR language.');
-      }
-
-      return runExclusiveHeavyTask(
-        `ocr:${allowedPath}:${requestedLangs.join('+')}`,
-        120000,
-        async () => {
-          const tesseract = await import('tesseract.js');
-          const tesseractPackageDir = path.dirname(require.resolve('tesseract.js/package.json'));
-          const tesseractCorePackageDir = path.dirname(require.resolve('tesseract.js-core/package.json'));
-          const workerPath = path.join(tesseractPackageDir, 'src', 'worker-script', 'node', 'index.js');
-          const corePath = tesseractCorePackageDir;
-          const langPathCandidates = [
-            path.resolve(app.getAppPath()),
-            path.resolve(app.getAppPath(), '..'),
-            path.resolve(process.cwd()),
-            path.resolve(process.cwd(), 'packages', 'desktop'),
-          ];
-          const langPath = langPathCandidates.find((candidate) =>
-            requestedLangs.every((code) => fs.existsSync(path.join(candidate, `${code}.traineddata`))),
-          );
-          if (!langPath) {
-            logger.error('ocr', 'OCR language data missing', { requestedLangs, langPathCandidates });
-            throw new Error(
-              `OCR local language data not found for [${requestedLangs.join(', ')}]. Checked: ${langPathCandidates.join(', ')}`,
-            );
-          }
-          const worker = await tesseract.createWorker(requestedLangs.join('+'), undefined, {
-            workerPath,
-            corePath,
-            langPath,
-            gzip: false,
-          });
-          try {
-            const { data: { text } } = await worker.recognize(allowedPath);
-            return { text: text.trim() };
-          } finally {
-            await worker.terminate();
-          }
-        },
-      );
-    },
-  );
 
 }

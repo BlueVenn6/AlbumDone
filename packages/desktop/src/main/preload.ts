@@ -101,15 +101,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   cancelPhotoScan: (scanId: string) => invoke('fs:cancelScan', scanId),
   getPhotoBase64: (photoId: string) => invoke('fs:getPhotoBase64', photoId),
-  saveToArchive: (photoId: string, content: string, instruction: string) =>
-    invoke('app:saveToArchive', photoId, content, instruction),
 
   // File system
   fs: {
     readImageAsBase64: (filePath: string) =>
       invoke('fs:readImageAsBase64', filePath),
-    readImagePreviewAsBase64: (filePath: string, maxDimension = 1536) =>
-      invoke('fs:readImagePreviewAsBase64', filePath, maxDimension),
     getThumbnail: (filePath: string, size = 200) =>
       invoke('fs:getThumbnail', filePath, size),
     computeContentHashes: (filePaths: string[]) =>
@@ -122,16 +118,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       invoke('fs:moveToTrash', filePath),
     deleteFiles: (filePaths: string[], mode: 'trash' | 'permanent' = 'trash') =>
       invoke('fs:deleteFiles', filePaths, mode),
-  },
-
-  // Settings / credential store
-  settings: {
-    getApiKeyStatus: (provider: string) =>
-      invoke('settings:getApiKeyStatus', provider),
-    setApiKey: (provider: string, apiKey: string) =>
-      invoke('settings:setApiKey', provider, apiKey),
-    deleteApiKey: (provider: string) =>
-      invoke('settings:deleteApiKey', provider),
   },
 
   tasks: {
@@ -153,6 +139,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // App info
   app: {
+    setLocale: (locale: string) => invoke('app:setLocale', locale),
     getVersion: () => invoke('app:getVersion'),
     getLocale: () => invoke('app:getLocale'),
     getPath: (name: string) => invoke('app:getPath', name),
@@ -160,6 +147,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   yearInReview: {
+    prepare: (photos: unknown[], timeMode: string) => invoke('yearInReview:generate', photos, timeMode, true),
+    export: (months: unknown[]) => invoke('yearInReview:export', months),
     generate: (
       photos: Array<{
         uri: string;
@@ -171,34 +160,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         isScreenshot?: boolean;
         thumbnailUri?: string;
       }>,
-      timeMode: 'rolling' | 'calendar' = 'rolling',
+      timeMode: 'rolling' | 'previousYear' | 'calendar' = 'rolling',
     ) => invoke('yearInReview:generate', photos, timeMode),
   },
 
-  // LLM proxy — main process injects credentials from secure storage.
-  llm: {
-    testConnection: (params: {
-      provider: string;
-      baseUrl?: string;
-      model: string;
-      supportsVision?: boolean;
-      mode?: 'direct' | 'proxy';
-      apiKey?: string;
-    }) => invoke('llm:testConnection', params),
-    chat: (params: unknown) => invoke('llm:chat', params),
-    chatWithImage: (params: unknown) => invoke('llm:chatWithImage', params),
-  },
-
-  screenshot: {
-    executeInstruction: (params: unknown) =>
-      invoke('screenshot:executeInstruction', params),
-    cancelInstruction: (requestId: string) =>
-      invoke('screenshot:cancelInstruction', requestId),
-  },
-
-  // OCR — runs Tesseract.js in main process with absolute file path
-  ocr: {
-    extractText: (filePath: string, lang?: string) =>
-      invoke('ocr:extractText', filePath, lang),
-  },
 });

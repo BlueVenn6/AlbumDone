@@ -27,8 +27,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 22.23.4
           cache: npm
+
+      - name: Use the pinned npm resolver
+        run: npm install --global npm@12.2.2
 
       - name: Install locked dependencies
         run: npm ci
@@ -65,7 +68,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 22.23.4
           cache: npm
 
       - name: Require SignPath configuration
@@ -92,6 +95,9 @@ jobs:
           if ($missing) {
             throw "Missing SignPath repository configuration: $($missing -join ', ')"
           }
+
+      - name: Use the pinned npm resolver
+        run: npm install --global npm@12.2.2
 
       - name: Install locked dependencies
         run: npm ci

@@ -1,20 +1,9 @@
 import type {
-  LLMMessage,
-  LLMProvider,
-  LLMResponse,
   Photo,
-  ProviderMode,
-  TestConnectionResult,
   YearInReviewResult,
+  ReviewMonth,
+  YearReviewTimeMode,
 } from '@photo-manager/shared';
-
-type DesktopProviderRequest = {
-  provider: LLMProvider;
-  baseUrl?: string;
-  model: string;
-  supportsVision?: boolean;
-  mode?: ProviderMode;
-};
 
 declare global {
   interface Window {
@@ -42,18 +31,9 @@ declare global {
       ): Promise<Photo[]>;
       cancelPhotoScan(scanId: string): Promise<{ cancelled: boolean }>;
       getPhotoBase64(photoId: string): Promise<string>;
-      saveToArchive(
-        photoId: string,
-        content: string,
-        instruction: string,
-      ): Promise<{ success: boolean; id?: string; error?: string }>;
       fs: {
         readImageAsBase64(
           filePath: string,
-        ): Promise<{ base64: string; mimeType: string }>;
-        readImagePreviewAsBase64(
-          filePath: string,
-          maxDimension?: number,
         ): Promise<{ base64: string; mimeType: string }>;
         getThumbnail(
           filePath: string,
@@ -81,15 +61,6 @@ declare global {
           fallbackTrashPaths?: string[];
         }>;
       };
-      settings: {
-        getApiKeyStatus(provider: string): Promise<{
-          provider: LLMProvider;
-          hasApiKey: boolean;
-          maskedKey?: string;
-        }>;
-        setApiKey(provider: string, apiKey: string): Promise<void>;
-        deleteApiKey(provider: string): Promise<void>;
-      };
       tasks: {
         getCheckpoint(checkpointKey: string): Promise<string | null>;
         saveCheckpoint(
@@ -105,12 +76,15 @@ declare global {
         getLanServerUrl(): Promise<string | null>;
       };
       app: {
+        setLocale(locale: string): Promise<boolean>;
         getVersion(): Promise<string>;
         getLocale(): Promise<string>;
         getPath(name: string): Promise<string>;
         openPath(targetPath: string): Promise<{ success: boolean; error?: string }>;
       };
       yearInReview: {
+        prepare(photos: Photo[], timeMode: YearReviewTimeMode): Promise<ReviewMonth[]>;
+        export(months: ReviewMonth[]): Promise<YearInReviewResult>;
         generate(
           photos: Array<{
             uri: string;
@@ -122,42 +96,8 @@ declare global {
             isScreenshot?: boolean;
             thumbnailUri?: string;
           }>,
-          timeMode?: 'rolling' | 'calendar',
+          timeMode?: YearReviewTimeMode,
         ): Promise<YearInReviewResult>;
-      };
-      llm: {
-        testConnection(
-          params: DesktopProviderRequest & { apiKey?: string },
-        ): Promise<TestConnectionResult>;
-        chat(
-          params: DesktopProviderRequest & {
-            messages: LLMMessage[];
-            options?: { temperature?: number; maxTokens?: number };
-          },
-        ): Promise<LLMResponse>;
-        chatWithImage(
-          params: DesktopProviderRequest & {
-            prompt: string;
-            imageBase64: string;
-            mimeType: string;
-            options?: { temperature?: number; maxTokens?: number };
-          },
-        ): Promise<LLMResponse>;
-      };
-      screenshot: {
-        executeInstruction(
-          params: DesktopProviderRequest & {
-            instruction: string;
-            imageBase64: string;
-            mimeType: string;
-            languageCode?: string;
-            requestId: string;
-          },
-        ): Promise<{ content: string }>;
-        cancelInstruction(requestId: string): Promise<{ cancelled: boolean }>;
-      };
-      ocr: {
-        extractText(filePath: string, lang?: string): Promise<{ text: string }>;
       };
     };
   }

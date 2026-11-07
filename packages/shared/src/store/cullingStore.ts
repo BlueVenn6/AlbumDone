@@ -2,28 +2,16 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { freeze } from 'immer';
 import type { CullingItem, CullingDecision, Photo } from '../types';
-import type { LLMClient } from '../api/llmClient';
-import { preProcessForCulling } from '../api/vision';
-import { getResolvedLocale, i18next } from '../i18n';
-
-export interface AiStats {
-  autoKept: number;
-  autoDeleted: number;
-  uncertainCount: number;
-}
-
 export interface CullingState {
-  items: CullingItem[]; // Only uncertain items (requiring human review)
-  allItems: CullingItem[]; // All items including AI-decided ones
+  items: CullingItem[];
+  allItems: CullingItem[];
   currentIndex: number;
   isProcessing: boolean;
   isComplete: boolean;
-  aiStats: AiStats;
   error: string | null;
   history: Array<{ photoId: string; previousDecision: CullingDecision }>;
 
   // Actions
-  runAIPreprocess: (photos: Photo[], client: LLMClient) => Promise<void>;
   decide: (photoId: string, decision: 'keep' | 'delete') => void;
   undoLast: () => void;
   goToNext: () => void;
@@ -44,7 +32,6 @@ const initialState = {
   currentIndex: 0,
   isProcessing: false,
   isComplete: false,
-  aiStats: { autoKept: 0, autoDeleted: 0, uncertainCount: 0 } as AiStats,
   error: null as string | null,
   history: [] as Array<{ photoId: string; previousDecision: CullingDecision }>,
 };
@@ -52,79 +39,6 @@ const initialState = {
 export const useCullingStore = create<CullingState>()(
   immer((set, get) => ({
     ...initialState,
-
-    runAIPreprocess: async (photos, client) => {
-      if (photos.length === 0) return;
-
-      set((state) => {
-        state.isProcessing = true;
-        state.error = null;
-        state.items = [];
-        state.allItems = [];
-        state.currentIndex = 0;
-        state.isComplete = false;
-        state.history = [];
-      });
-
-      try {
-        const result = await preProcessForCulling(photos, client, getResolvedLocale());
-
-        const keepSet = new Set(result.keep);
-        const deleteSet = new Set(result.delete);
-
-        const allItems: CullingItem[] = photos.map((photo) => {
-          let aiDecision: CullingDecision = 'pending';
-          if (keepSet.has(photo.id)) aiDecision = 'keep';
-          else if (deleteSet.has(photo.id)) aiDecision = 'delete';
-
-          return {
-            photo,
-            decision: aiDecision === 'pending' ? 'pending' : aiDecision,
-            aiDecision,
-          };
-        });
-
-        // Only uncertain items need human review
-        const uncertainItems = allItems.filter(
-          (item) => item.aiDecision === 'pending',
-        );
-
-        set((state) => {
-          state.allItems = allItems;
-          state.items = uncertainItems;
-          state.aiStats = {
-            autoKept: result.keep.length,
-            autoDeleted: result.delete.length,
-            uncertainCount: result.uncertain.length,
-          };
-          state.currentIndex = 0;
-          state.isProcessing = false;
-          state.isComplete = uncertainItems.length === 0;
-        });
-      } catch (err) {
-        // If AI preprocessing fails, treat all photos as uncertain
-        const uncertainItems: CullingItem[] = photos.map((photo) => ({
-          photo,
-          decision: 'pending' as CullingDecision,
-          aiDecision: 'pending' as CullingDecision,
-        }));
-
-        set((state) => {
-          state.allItems = uncertainItems;
-          state.items = uncertainItems;
-          state.aiStats = {
-            autoKept: 0,
-            autoDeleted: 0,
-            uncertainCount: photos.length,
-          };
-          state.currentIndex = 0;
-          state.isProcessing = false;
-          state.error =
-            err instanceof Error ? err.message : i18next.t('analysis.cullingFallbackManual');
-          state.isComplete = photos.length === 0;
-        });
-      }
-    },
 
     decide: (photoId, decision) => {
       // Search the immutable state: reading every item through an Immer draft

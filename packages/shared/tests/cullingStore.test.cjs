@@ -39,4 +39,4 @@ assert.deepEqual(store.getState().allItems.map((i) => i.decision), ['keep', 'pen
 store.getState().undoLast();
 assert.equal(store.getState().history.length, 0);
 store.getState().reset();
-console.log('Culling decisions, wraparound, undo, immutable state and AI items passed');
+console.log('Culling decisions, wraparound, undo, immutable state and separately stored review items passed');

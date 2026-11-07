@@ -1,139 +1,55 @@
-const assert = require('assert');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
-const { generateYearInReview: generateWithClock } = require('../dist/main/yearInReview');
-
-const fixedNow = new Date(2026, 6, 25, 12);
-const generateYearInReview = (...args) => generateWithClock(...args, fixedNow);
-
-const fixtureDir = path.resolve(__dirname, '../../shared/tests/fixtures/dedupe-golden');
-const fixtureNames = [
-  'base-scene.png',
-  'base-scene-q94.jpg',
-  'base-scene-q68.jpg',
-  'burst-a.png',
-  'screenshot-text-a.png',
-  'person-pose-a.png',
-  'different-document.png',
-];
-
-function inputPhoto(index, month, overridePath) {
-  const filePath = overridePath ?? path.join(fixtureDir, fixtureNames[index % fixtureNames.length]);
-  return {
-    uri: filePath,
-    filename: path.basename(filePath),
-    timestamp: new Date(2026, month, (index % 20) + 1, 12, 0, 0).getTime(),
-    width: 960,
-    height: 640,
-    fileSize: 100000 + index,
-    isScreenshot: false,
-  };
-}
-
-async function dimensions(filePath) {
-  const image = await loadImage(filePath);
-  return { width: image.width, height: image.height };
-}
-
-async function assertPlaceholderNotBlack(filePath, monthIndexes, columns = 4) {
-  const image = await loadImage(filePath);
-  const canvas = createCanvas(image.width, image.height);
-  const context = canvas.getContext('2d');
-  context.drawImage(image, 0, 0);
-  for (const monthIndex of monthIndexes) {
-    const column = monthIndex % columns;
-    const row = Math.floor(monthIndex / columns);
-    const pixel = context.getImageData(column * 400 + 200, 40 + row * 400 + 200, 1, 1).data;
-    assert(
-      Math.max(pixel[0], pixel[1], pixel[2]) > 35,
-      `month ${monthIndex + 1} placeholder must not be an empty black tile`,
-    );
-  }
-}
-
-async function main() {
-  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'albumdone-yir-test-'));
+const { prepareYearReview, exportYearReview, generateYearInReview } = require('../dist/main/yearInReview');
+const { replaceReviewPhoto, SUPPORTED_LOCALES } = require('@photo-manager/shared');
+const now = new Date(2026, 6, 25, 12);
+(async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'albumdone-review-'));
   try {
-    for (const count of [1, 2, 4]) {
-      const result = await generateYearInReview(
-        Array.from({ length: count }, (_, index) => inputPhoto(index, index % 2)),
-        outputDir,
-        'calendar',
-        'zh-Hans',
-      );
-      assert(result.outputPath);
-      assert.deepStrictEqual(await dimensions(result.outputPath), {
-        width: 900,
-        height: 80 + count * 900,
-      });
-      assert.strictEqual(result.moments.length, count);
+    const photos = ['#e12626', '#176bd4'].map((color, index) => {
+      const canvas = createCanvas(960, 640); const ctx = canvas.getContext('2d');
+      ctx.fillStyle = color; ctx.fillRect(0, 0, 960, 640);
+      const uri = path.join(dir, `photo-${index}.jpg`);
+      fs.writeFileSync(uri, canvas.toBuffer('image/jpeg'));
+      return { uri, filename: path.basename(uri), timestamp: new Date(2026, 5, 10 + index).getTime(),
+        width: 960, height: 640, fileSize: 100000, isScreenshot: false };
+    });
+    const months = await prepareYearReview(photos, 'rolling', 'en', now);
+    assert.equal(months.length, 12);
+    const june = months.find(m => m.photo);
+    assert(june); assert.equal(june.candidates.length, 2);
+    assert.equal(months.filter(m => !m.photo).length, 11);
+    assert.equal(months[0].monthId, 2025 * 12 + 7);
+    assert.equal(months[11].monthId, 2026 * 12 + 6);
+    const before = await exportYearReview(months, dir, 'en');
+    const alternative = june.candidates.find(p => p.id !== june.photo.id);
+    const replacement = replaceReviewPhoto(months, june.monthId, alternative.id);
+    const changed = await exportYearReview(replacement, dir, 'en');
+    assert.notDeepEqual(fs.readFileSync(before.outputPath), fs.readFileSync(changed.outputPath), 'Export must preserve a changed photo');
+    assert.equal(replacement.find(m => m.monthId === june.monthId).photo.id, alternative.id);
+    for (const locale of Object.keys(SUPPORTED_LOCALES)) {
+      const localized = await prepareYearReview(photos, 'rolling', locale, now);
+      const result = await exportYearReview(localized, dir, locale);
+      const image = await loadImage(result.outputPath);
+      assert.deepEqual([image.width, image.height], [1536, 1164]);
+      assert.equal(result.monthsCovered, 1);
+      assert.equal(result.emptyMonths.length, 11);
+      const canvas = createCanvas(image.width, image.height); const ctx = canvas.getContext('2d');
+      ctx.drawImage(image, 0, 0);
+      const pixel = ctx.getImageData(150, 200, 1, 1).data;
+      assert(Math.min(...pixel.slice(0, 3)) > 100, `${locale}: blank month must contain a light card`);
     }
-
-    const sparseMonths = [0, 0, 1, 1, 3, 6];
-    const calendar = await generateYearInReview(
-      sparseMonths.map((month, index) => inputPhoto(index, month)),
-      outputDir,
-      'calendar',
-      'en',
-    );
-    assert(calendar.outputPath);
-    assert.deepStrictEqual(await dimensions(calendar.outputPath), { width: 400, height: 2840 });
-    assert.strictEqual(calendar.monthsCovered, 7);
-    assert.deepStrictEqual(calendar.emptyMonths.length, 3);
-    assert.strictEqual(calendar.moments.length, 4);
-    assert(calendar.moments.every((moment) =>
-      moment.whySelected.every((reason) => !/[\u3400-\u9fff]/u.test(reason))));
-    assert(!calendar.moments.some((moment) => ['2026-03', '2026-05', '2026-06'].includes(moment.month)));
-    await assertPlaceholderNotBlack(calendar.outputPath, [2, 4, 5], 1);
-
-    const unreadable = await generateYearInReview(
-      Array.from({ length: 6 }, (_, index) => inputPhoto(
-        index,
-        index,
-        path.join(outputDir, `missing-${index}.jpg`),
-      )),
-      outputDir,
-      'calendar',
-      'zh-Hans',
-    );
-    assert(unreadable.outputPath);
-    await assertPlaceholderNotBlack(unreadable.outputPath, Array.from({ length: 7 }, (_, index) => index), 1);
-
-    const denseMonth = await generateYearInReview(
-      Array.from({ length: 80 }, (_, index) => inputPhoto(index, 4)),
-      outputDir,
-      'calendar',
-      'en',
-    );
-    assert(denseMonth.outputPath);
-    assert.deepStrictEqual(await dimensions(denseMonth.outputPath), { width: 400, height: 2840 });
-
-    for (const [now, months, expectedSize] of [
-      [new Date(2026, 8, 25), 9, { width: 400, height: 3640 }],
-      [new Date(2026, 11, 31), 12, { width: 1600, height: 1240 }],
-    ]) {
-      const result = await generateWithClock(sparseMonths.map((month, i) => inputPhoto(i, month)),
-        outputDir, 'calendar', 'en', now);
-      assert.equal(result.monthsCovered, months);
-      assert.deepEqual(await dimensions(result.outputPath), expectedSize);
-    }
-    const nextYear = await generateWithClock(sparseMonths.map((month, i) => inputPhoto(i, month)),
-      outputDir, 'calendar', 'en', new Date(2027, 0, 1));
-    assert.equal(nextYear.outputPath, '', 'previous-year photos are excluded in a new calendar year');
-
-    const empty = await generateYearInReview([], outputDir, 'calendar', 'en');
-    assert.strictEqual(empty.outputPath, '');
-    console.log('desktop year review export/pixel tests passed');
-  } finally {
-    if (outputDir.startsWith(os.tmpdir())) {
-      fs.rmSync(outputDir, { recursive: true, force: true });
-    }
-  }
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+    assert.equal((await prepareYearReview(photos, 'previousYear', 'en', now)).filter(m => m.photo).length, 0);
+    await assert.rejects(generateYearInReview([], dir, 'rolling', 'en', now));
+    const invalid = months.map(m => ({ ...m })); invalid[1].monthId = invalid[0].monthId;
+    await assert.rejects(exportYearReview(invalid, dir, 'en'), /consecutive/);
+    const missing = months.map(m => m.photo ? { ...m, photo: { ...m.photo, uri: path.join(dir, 'missing.jpg') } } : m);
+    await assert.rejects(exportYearReview(missing, dir, 'en'), /ENOENT/, 'Unreadable selected photos must fail export');
+    const wrongMonth = months.map(m => m.photo ? { ...m, photo: { ...m.photo, timestamp: new Date(2026, 0, 1).getTime() } } : m);
+    await assert.rejects(exportYearReview(wrongMonth, dir, 'en'), /outside/);
+    console.log('Desktop exact-choice export, month boundaries, failures and all 15 languages passed');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

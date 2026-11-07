@@ -8,6 +8,15 @@ import { installMainProcessLogGuards, logger } from './logger';
 import { addAllowedLocalFileRoot, assertAllowedLocalFilePath } from './localFileAccess';
 import { DESKTOP_PORTS } from './ports';
 
+// Respect Electron's explicit profile directory for isolated installs and acceptance runs.
+// The default launch continues using the existing application data directory.
+const explicitUserData = app.commandLine.getSwitchValue('user-data-dir');
+if (explicitUserData) {
+  if (!path.isAbsolute(explicitUserData)) throw new Error('User data directory must be absolute.');
+  fs.mkdirSync(explicitUserData, { recursive: true });
+  app.setPath('userData', explicitUserData);
+}
+
 const isDev = process.env.NODE_ENV === 'development';
 const RENDERER_DEV_URL = `http://localhost:${DESKTOP_PORTS.renderer}`;
 

@@ -33,6 +33,7 @@ export type MonthlyReviewSelection<TPhoto extends MonthlyReviewPhoto = MonthlyRe
   monthId: string;
   slotIndex: number;
   selectedPhoto: TPhoto | null;
+  candidates: TPhoto[];
   confidence: MonthlyReviewConfidence;
   score: number;
   reasons: string[];
@@ -392,6 +393,7 @@ function buildSelectionForMonth<TPhoto extends MonthlyReviewPhoto>(
       monthId,
       slotIndex,
       selectedPhoto: null,
+      candidates: [],
       confidence: 'empty',
       score: 0,
       reasons: ['该月没有照片'],
@@ -410,6 +412,7 @@ function buildSelectionForMonth<TPhoto extends MonthlyReviewPhoto>(
       monthId,
       slotIndex,
       selectedPhoto: null,
+      candidates: [],
       confidence: 'empty',
       score: 0,
       reasons: ['该月照片缺少有效拍摄时间'],
@@ -492,6 +495,7 @@ function buildSelectionForMonth<TPhoto extends MonthlyReviewPhoto>(
     monthId,
     slotIndex,
     selectedPhoto,
+    candidates: ranked.slice(0, 12).map((candidate) => candidate.photo),
     confidence,
     score: selectedPhoto ? best.score : 0,
     reasons,

@@ -62,7 +62,7 @@ try {
   assert.strictEqual(desktopPackage.optionalDependencies?.canvas, undefined);
 
   const sharedPackage = require('../../shared/package.json');
-  assert.strictEqual(sharedPackage.dependencies['@napi-rs/canvas'] !== undefined, true);
+  assert.strictEqual(sharedPackage.dependencies['@napi-rs/canvas'], undefined, 'The pure shared core no longer depends on the retired AI image API');
   assert.strictEqual(sharedPackage.optionalDependencies?.canvas, undefined);
 
   const hookSource = fs.readFileSync(
@@ -74,17 +74,9 @@ try {
   assert.match(hookSource, /thumbnailUriCache\.delete\(cacheKey\)/);
   assert.match(hookSource, /lastAutoRetryUri\.current !== src/);
 
-  const batchSource = fs.readFileSync(
-    path.resolve(__dirname, '../src/renderer/components/BatchCullingGrid.tsx'),
-    'utf8',
-  );
-  const fullscreenSource = fs.readFileSync(
-    path.resolve(__dirname, '../src/renderer/components/FullscreenCulling.tsx'),
-    'utf8',
-  );
-  assert.match(batchSource, /onError=\{thumbnail\.onLoadError\}/);
-  assert.match(fullscreenSource, /preview\.onLoadError\(\)/);
-  assert.match(fullscreenSource, /onError=\{thumbnail\.onLoadError\}/);
+  const cullingSource = fs.readFileSync(path.resolve(__dirname, '../src/renderer/screens/CullingScreen.tsx'), 'utf8');
+  assert.match(cullingSource, /onError=\{thumbnail\.onLoadError\}/);
+  assert.match(cullingSource, /preview\.onLoadError\(\)/);
 
   console.log('desktop thumbnail recovery tests passed');
 } finally {

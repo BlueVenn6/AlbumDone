@@ -1,50 +1,15 @@
 // Types
 export * from './types';
 
-// API
-export { LLMClient, testLLMConnection } from './api/llmClient';
-export type {
-  LLMTransport,
-  LLMTransportResponse,
-  TestConnectionResult,
-} from './api/llmClient';
-export {
-  LLMClientError,
-  buildAnthropicMessagesUrl,
-  buildOpenAIChatCompletionsUrl,
-  buildOpenAIResponsesUrl,
-  classifyLLMError,
-  getDefaultProviderBaseUrl,
-  normalizeProviderBaseUrl,
-  resolveLLMEndpoint,
-} from './api/llmEndpoint';
-export type {
-  ClassifiedLLMError,
-  LLMEndpointProtocol,
-  LLMErrorCategory,
-  ResolvedLLMEndpoint,
-} from './api/llmEndpoint';
-export {
-  analyzeScreenshot,
-  executeInstruction,
-  preProcessForCulling,
-  selectBestFromGroup,
-} from './api/vision';
-export type { ScreenshotType, ScreenshotAnalysis, CullingPreprocessResult } from './api/vision';
-export { extractTextFromImage } from './api/ocr';
-export { selectImageSource } from './api/imagePicker';
-export type { ImageSourceSelection, PickedMobileImage } from './api/imagePicker';
+// Local review output types
 export type { YearInReviewResult, YearInReviewMode, YearInReviewMoment } from './api/yearInReview';
-export { proxyModelSupportsVision } from './types';
 export { APP_ENV_KEYS, APP_PORTS } from './config/ports';
 
 // Stores
-export { useSettingsStore, selectVisionClient, selectTextClient } from './store/settingsStore';
-export type { SettingsState } from './store/settingsStore';
 export { usePhotoStore } from './store/photoStore';
 export type { PhotoState } from './store/photoStore';
 export { useCullingStore } from './store/cullingStore';
-export type { CullingState, AiStats } from './store/cullingStore';
+export type { CullingState } from './store/cullingStore';
 
 // DB
 export type { DbAdapter } from './db/queries';
@@ -80,15 +45,11 @@ export type {
 export {
   isScreenshot,
   detectScreenshotCandidate,
-  classifyScreenshot,
   filterScreenshots,
   filterNonScreenshots,
   detectScreenshots,
 } from './utils/screenshotDetector';
 export type { ScreenshotDetectionInput, ScreenshotDetectionResult } from './utils/screenshotDetector';
-export { translateText } from './utils/translation';
-export { getFeatureAvailability } from './utils/featureAvailability';
-export type { FeatureAvailability } from './utils/featureAvailability';
 export {
   pathToLocalFileUri,
   localFileUriToPath,
@@ -146,6 +107,8 @@ export type {
 export {
   buildYearReviewLayoutPlan,
   getYearReviewMonthId,
+  getYearReviewMonthIds,
+  getYearReviewRows,
 } from './utils/yearReviewLayout';
 export type {
   YearReviewLayoutPhoto,
@@ -166,3 +129,8 @@ export {
 export type { SupportedLocale } from './i18n/index';
 export { I18nProvider, useTranslation } from './i18n/provider';
 export type { TFunction } from './i18n/provider';
+
+export { MONTHLY_ENCOURAGEMENTS, pickMonthEncouragements, nextMonthEncouragement } from './data/monthlyEncouragements';
+
+export { buildReviewMonths, replaceReviewPhoto, getReviewSummary, isReviewExportReady } from './utils/yearReviewEditor';
+export type { ReviewMonth } from './utils/yearReviewEditor';

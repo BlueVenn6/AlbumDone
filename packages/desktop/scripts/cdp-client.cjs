@@ -15,7 +15,7 @@ async function connectToAlbumDone(port) {
     request.setTimeout(15000, () => request.destroy(new Error('CDP target discovery timed out.')));
     request.on('error', reject);
   });
-  const target = targets.find((item) => item.type === 'page' && item.title === 'AlbumDone');
+  const target = targets.find((item) => item.type === 'page');
   if (!target?.webSocketDebuggerUrl) throw new Error('AlbumDone renderer was not found.');
   const socket = new WebSocket(target.webSocketDebuggerUrl, { handshakeTimeout: 15000 });
   const pending = new Map();
@@ -63,7 +63,7 @@ async function connectToAlbumDone(port) {
   const waitFor = async (expression, timeoutMs = 30000) => {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
-      if (await evaluate(`document.body && (${expression})`)) return Date.now() - startedAt;
+      if (await evaluate(`Boolean(document.body && (${expression}))`)) return Date.now() - startedAt;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     throw new Error(`Timed out waiting for: ${expression}`);

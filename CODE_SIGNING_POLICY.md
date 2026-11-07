@@ -25,11 +25,7 @@ credit:
 
 ## Privacy
 
-AlbumDone does not transfer information to networked systems unless the user
-explicitly configures and invokes an AI provider or Custom Endpoint. The
-developer does not receive or store user photos, API keys, or model requests.
-See [README.md](README.md), [SECURITY.md](SECURITY.md), and
-[DISCLAIMER.md](DISCLAIMER.md) for details.
+Photo workflows run locally. This release removes AI-provider, model-request and API-key integrations. See [PRIVACY.md](PRIVACY.md) for local storage and network behavior.
 
 ## Trusted Build
 

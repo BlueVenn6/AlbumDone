@@ -1,461 +1,136 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import type { Photo, YearInReviewResult } from '@photo-manager/shared';
-import { colors, typography, spacing, radius } from '../theme';
-import { getRandomEncouragement, normalizeLocale, pathToLocalFileUri, usePhotoStore, useTranslation } from '@photo-manager/shared';
-import { getCachedAlbumPhotos, setCachedAlbumPhotos } from '../utils/photoSessionCache';
-
-type RouteState = {
-  albumId?: string;
-  albumTitle?: string;
-};
-
-type TimeMode = 'rolling' | 'calendar';
-
-function photosBelongToAlbum(photos: Photo[], albumId: string): boolean {
-  return photos.length > 0 && photos.every((photo) => photo.albumId === albumId);
-}
+import {
+  getReviewSummary, nextMonthEncouragement, pathToLocalFileUri, localFileUriToPath, pickMonthEncouragements,
+  replaceReviewPhoto, useTranslation, type ReviewMonth, type YearReviewTimeMode,
+} from '@photo-manager/shared';
+import { colors } from '../theme';
 
 export function YearInReviewScreen(): React.JSX.Element {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { i18n, t } = useTranslation();
-  const { albumId } = (location.state as RouteState) ?? {};
-  const storePhotos = usePhotoStore((state) => state.photos);
-
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [analyzingCount, setAnalyzingCount] = useState(0);
-  const [result, setResult] = useState<YearInReviewResult | null>(null);
+  const { state } = useLocation();
+  const albumId = (state as { albumId?: string } | null)?.albumId;
+  const { t, i18n } = useTranslation();
+  const [timeMode, setTimeMode] = useState<YearReviewTimeMode>('rolling');
+  const [months, setMonths] = useState<ReviewMonth[]>([]);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [encouragement, setEncouragement] = useState('');
-  const [timeMode, setTimeMode] = useState<TimeMode>('rolling');
+  const [outputPath, setOutputPath] = useState('');
+  const [choosingMonth, setChoosingMonth] = useState<number | null>(null);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const summary = getReviewSummary(months);
+  const locale = i18n.resolvedLanguage ?? i18n.language;
+  // A language change updates every empty card, including already generated results.
+  useEffect(() => {
+    setMonths(current => current.map((month, index) => ({
+      ...month, quote: pickMonthEncouragements(locale, 12, () => 0.5)[index]!,
+    })));
+    setOutputPath('');
+  }, [locale]);
+  const label = (id: number) => new Date(Math.floor(id / 12), id % 12, 1)
+    .toLocaleDateString(locale, { year: 'numeric', month: 'long' });
 
-  const resultText = useMemo(() => {
-    if (!result) return '';
-    if (result.mode === 'scene') {
-      return t('yearInReviewSceneResult', { months: result.monthsCovered });
-    }
-    return t('yearInReviewPersonResult', { months: result.monthsCovered });
-  }, [result, t]);
-
-  const handleGenerate = useCallback(async () => {
-    if (!albumId || !window.electronAPI?.yearInReview?.generate || !window.electronAPI?.getPhotos) {
-      setError(t('yearInReview.errors.selectFolder'));
-      return;
-    }
-
-    setIsGenerating(true);
-    setError('');
-    setResult(null);
-    setEncouragement('');
-    setAnalyzingCount(0);
-
+  async function generate() {
+    if (!albumId || !window.electronAPI) { setError('yearInReview.errors.selectFolder'); return; }
+    setBusy(true); setError(''); setOutputPath(''); setChoosingMonth(null);
     try {
-      const cachedPhotos = photosBelongToAlbum(storePhotos, albumId)
-        ? storePhotos
-        : getCachedAlbumPhotos(albumId);
-      if (cachedPhotos && cachedPhotos.length > 0) {
-        setAnalyzingCount(cachedPhotos.filter((photo) => photo.albumId === albumId).length);
-      }
-      const allPhotos = await window.electronAPI.getPhotos(albumId, { mode: 'fast' });
-      setCachedAlbumPhotos(albumId, allPhotos);
-      const photos = Array.from(
-        new Set(
-          allPhotos
-            .filter((photo: Photo) => photo.albumId === albumId)
-            .map((photo) => JSON.stringify({
-              uri: photo.uri,
-              filename: photo.filename,
-              timestamp: photo.timestamp,
-              width: photo.width,
-              height: photo.height,
-              fileSize: photo.fileSize,
-              isScreenshot: photo.isScreenshot,
-              thumbnailUri: photo.thumbnailUri,
-            }))
-            .filter((item) => item.length > 0),
-        ),
-      ).map((item) => JSON.parse(item) as {
-        uri: string;
-        filename: string;
-        timestamp?: number;
-        width?: number;
-        height?: number;
-        fileSize?: number;
-        isScreenshot?: boolean;
-        thumbnailUri?: string;
-      });
-
-      if (photos.length === 0) {
-        throw new Error(t('yearInReview.errors.noReadablePhotos'));
-      }
-
-      setAnalyzingCount(photos.length);
-      const generated = await window.electronAPI.yearInReview.generate(photos, timeMode);
-      if (!generated.outputPath || generated.monthsCovered <= 0) {
-        throw new Error(t('yearInReview.errors.notEnoughPhotos'));
-      }
-      setResult(generated);
-
-      if (generated.mode === 'scene') {
-        setEncouragement(getRandomEncouragement(normalizeLocale(i18n.language)));
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('yearInReview.errors.generateFailed'));
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [albumId, i18n.language, storePhotos, t, timeMode]);
-
-  const handleOpenFile = useCallback(async () => {
-    if (!result?.outputPath || !window.electronAPI?.app?.openPath) {
-      return;
-    }
-
-    const openResult = await window.electronAPI.app.openPath(result.outputPath);
-    if (!openResult.success) {
-      setError(openResult.error ?? t('yearInReview.errors.openFileFailed'));
-    }
-  }, [result?.outputPath, t]);
-
+      const photos = await window.electronAPI.getPhotos(albumId, { mode: 'fast' });
+      const result = await window.electronAPI.yearInReview.prepare(photos, timeMode);
+      if (!result.some(month => month.photo)) { setMonths([]); setError('yearInReview.noPhotosInRange'); }
+      else { setMonths(result); setFailedImages(new Set()); }
+    } catch (err) { console.error(err); setError('yearInReview.errors.generateFailed'); }
+    finally { setBusy(false); }
+  }
+  async function save() {
+    if (!window.electronAPI || failedImages.size > 0) return;
+    setBusy(true); setError('');
+    try { setOutputPath((await window.electronAPI.yearInReview.export(months)).outputPath); }
+    catch (err) { console.error(err); setError('yearInReview.errors.saveFailed'); }
+    finally { setBusy(false); }
+  }
+  function update(next: ReviewMonth[]) { setMonths(next); setOutputPath(''); }
+  const choosing = months.find(month => month.monthId === choosingMonth);
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <button style={styles.backButton} onClick={() => navigate(-1)}>
-          ← {t('common.back')}
+    <main style={styles.container}>
+      <header style={styles.header}>
+        <button onClick={() => navigate(-1)}>{t('common.back')}</button>
+        <h1 style={{ margin: 0, fontSize: 28 }}>{t('yearInReview.title')}</h1>
+      </header>
+      <p>{t('yearInReview.intro')}</p>
+      <div style={styles.actions}>
+        {(['rolling', 'previousYear'] as const).map(mode => <button key={mode}
+          aria-pressed={timeMode === mode} disabled={busy} onClick={() => {
+            setTimeMode(mode); setMonths([]); setOutputPath(''); setChoosingMonth(null);
+          }}>{t(mode === 'rolling' ? 'yearInReview.last12Months' : 'yearInReview.previousYear')}</button>)}
+        <button className="primary-action" disabled={busy} onClick={() => void generate()}>
+          {t(busy ? 'common.loading' : 'yearInReview.generate')}
         </button>
-        <h1 style={styles.title}>{t('yearInReview.title')}</h1>
-        <p style={styles.subtitle}>{t('yearInReviewSubtitle')}</p>
       </div>
-
-      <div style={styles.panel}>
-        <div style={styles.modeToggle}>
-          <button
-            style={{
-              ...styles.modeToggleButton,
-              ...(timeMode === 'rolling' ? styles.modeToggleButtonActive : {}),
-            }}
-            onClick={() => setTimeMode('rolling')}
-            disabled={isGenerating}
-          >
-            {t('yearInReview.last12Months')}
-          </button>
-          <button
-            style={{
-              ...styles.modeToggleButton,
-              ...(timeMode === 'calendar' ? styles.modeToggleButtonActive : {}),
-            }}
-            onClick={() => setTimeMode('calendar')}
-            disabled={isGenerating}
-          >
-            {t('yearInReview.thisYear')}
-          </button>
+      {error && <p role="alert">{t(error)}</p>}
+      {months.length > 0 && <>
+        <p role="status">{t('yearInReview.coverage', { months: summary.covered, empty: summary.empty })}</p>
+        <div style={styles.actions}>
+          <button disabled={busy} onClick={() => {
+            const quotes = pickMonthEncouragements(locale, months.length);
+            update(months.map((month, index) => ({ ...month, quote: quotes[index]! })));
+          }}>{t('yearInReview.shuffleCards')}</button>
+          <button className="primary-action" disabled={busy || failedImages.size > 0} onClick={() => void save()}>{t('common.save')}</button>
         </div>
-
-        <button
-          style={{
-            ...styles.generateButton,
-            opacity: isGenerating ? 0.6 : 1,
-            cursor: isGenerating ? 'not-allowed' : 'pointer',
-          }}
-          onClick={handleGenerate}
-          disabled={isGenerating}
-        >
-          {isGenerating ? t('common.loading') : t('yearInReview.generate')}
-        </button>
-
-        {isGenerating && (
-          <div style={styles.progressBox}>
-            <div style={styles.spinner} />
-            <span style={styles.progressText}>{t('yearInReview.analyzingPhotos', { count: analyzingCount })}</span>
-          </div>
-        )}
-
-        {error && <div style={styles.errorBox}>{error}</div>}
-
-        {result && (
-          <div style={styles.resultBox}>
-            <div style={styles.resultLabel}>{t('yearInReviewDone')}</div>
-            <div style={styles.resultText}>{resultText}</div>
-            {result.mode === 'scene' && encouragement && (
-              <div style={styles.encouragementText}>{encouragement}</div>
-            )}
-            <ReviewImage key={result.outputPath} outputPath={result.outputPath} />
-            <button style={styles.openFileButton} onClick={handleOpenFile}>
-              {t('yearInReviewOpenFile')}
-            </button>
-            <div style={styles.resultPath}>{result.outputPath}</div>
-            {result.moments && result.moments.length > 0 && (
-              <div style={styles.momentList}>
-                {result.moments.map((moment) => (
-                  <div key={`${moment.month}-${moment.coverPhoto.id}`} style={styles.momentItem}>
-                    <div style={styles.momentHeader}>
-                      <span>{moment.month}</span>
-                      <span>{moment.score}</span>
-                    </div>
-                    <div style={styles.momentTitle}>{moment.momentTitle}</div>
-                    <div style={styles.momentWhy}>{moment.whySelected.join(t('yearInReview.reasonsSeparator'))}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {result.emptyMonths && result.emptyMonths.length > 0 && (
-              <div style={styles.emptyMonths}>
-                {t('yearInReview.emptyMonths', { months: result.emptyMonths.join(t('yearInReview.reasonsSeparator')) })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ReviewImage({ outputPath }: { outputPath: string }): React.JSX.Element {
-  const { t } = useTranslation();
-  const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>('loading');
-  const [attempt, setAttempt] = useState(0);
-
-  return (
-    <div style={styles.preview}>
-      {status === 'loading' && <div role="status">{t('common.loading')}</div>}
-      {status !== 'failed' ? (
-        <img
-          key={attempt}
-          data-testid="year-review-preview"
-          src={pathToLocalFileUri(outputPath)}
-          alt={t('yearInReview.preview')}
-          style={styles.previewImage}
-          onLoad={() => setStatus('loaded')}
-          onError={() => setStatus('failed')}
-        />
-      ) : (
-        <div role="alert" style={styles.previewError}>
-          <span>{t('yearInReview.previewFailed')}</span>
-          <button style={styles.openFileButton} onClick={() => {
-            setStatus('loading');
-            setAttempt((value) => value + 1);
-          }}>
-            {t('common.retry')}
-          </button>
+        <div data-testid="year-review-months" style={styles.grid}>
+          {months.map(month => <article key={month.key} data-month={month.monthId} style={styles.card}>
+            <h2 style={{ fontSize: 17, margin: '0 0 12px', overflowWrap: 'anywhere' }}>{label(month.monthId)}</h2>
+            {month.photo ? <>
+              <img src={pathToLocalFileUri(localFileUriToPath(month.photo.uri))} alt={month.photo.filename}
+                style={styles.photo} onLoad={() => setFailedImages(current => {
+                  const next = new Set(current); next.delete(month.key); return next;
+                })} onError={() => setFailedImages(current => new Set(current).add(month.key))} />
+              {failedImages.has(month.key) && <p role="alert">{t('yearInReview.imageFailed')}</p>}
+              <button disabled={busy} onClick={() => setChoosingMonth(month.monthId)}>
+                {t('yearInReview.choosePhoto', { month: label(month.monthId) })}
+              </button>
+            </> : <button style={styles.quote} disabled={busy} onClick={() => update(months.map(item =>
+              item.key === month.key ? { ...item, quote: nextMonthEncouragement(locale, item.quote) } : item
+            ))} aria-label={t('yearInReview.changeQuote')}>
+              <span>{month.quote}</span>
+              <small>{t('yearInReview.noPhotosThisMonth')}</small>
+            </button>}
+          </article>)}
         </div>
-      )}
-    </div>
+        {choosing && <section role="dialog" aria-modal="true" aria-label={t('yearInReview.choosePhoto', { month: label(choosing.monthId) })} style={styles.dialog}>
+          <div style={styles.dialogBody}>
+            <h2>{t('yearInReview.choosePhoto', { month: label(choosing.monthId) })}</h2>
+            <p>{t('yearInReview.candidateHint')}</p>
+            <div style={styles.grid}>{choosing.candidates.map(photo => <button key={photo.id} onClick={() => {
+              update(replaceReviewPhoto(months, choosing.monthId, photo.id)); setChoosingMonth(null);
+            }} aria-pressed={choosing.photo?.id === photo.id}>
+              <img src={pathToLocalFileUri(localFileUriToPath(photo.uri))} alt={photo.filename} style={styles.photo} />
+              {choosing.photo?.id === photo.id && <span>{t('yearInReview.selected')}</span>}
+            </button>)}</div>
+            <button onClick={() => setChoosingMonth(null)}>{t('common.cancel')}</button>
+          </div>
+        </section>}
+        {outputPath && <div style={{ marginTop: 24 }} role="status">
+          <p>{t('yearInReviewDone')}</p>
+          <button onClick={async () => {
+            const result = await window.electronAPI!.app.openPath(outputPath);
+            if (!result.success) setError('yearInReview.errors.openFileFailed');
+          }}>{t('yearInReviewOpenFile')}</button>
+          <p style={{ overflowWrap: 'anywhere' }}>{outputPath}</p>
+        </div>}
+      </>}
+    </main>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: {
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    background: colors.background,
-    overflowY: 'auto',
-  },
-  header: {
-    padding: `${spacing.xl} ${spacing.xl} ${spacing.md}`,
-    borderBottom: `1px solid ${colors.border}`,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: spacing.sm,
-  },
-  backButton: {
-    width: 'fit-content',
-    padding: `${spacing.xs} ${spacing.md}`,
-    background: colors.surface,
-    color: colors.textSecondary,
-    border: `1px solid ${colors.border}`,
-    borderRadius: radius.md,
-    fontSize: typography.sizes.sm,
-    fontWeight: '700',
-    fontFamily: typography.fontFamily,
-    cursor: 'pointer',
-  },
-  title: {
-    margin: 0,
-    color: colors.text,
-    fontSize: typography.sizes.xxl,
-    fontWeight: '700',
-    fontFamily: typography.fontFamily,
-  },
-  subtitle: {
-    margin: 0,
-    color: colors.textSecondary,
-    fontSize: typography.sizes.md,
-    fontFamily: typography.fontFamily,
-  },
-  panel: {
-    padding: spacing.xl,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: spacing.md,
-    maxWidth: '900px',
-  },
-  modeToggle: {
-    display: 'flex',
-    gap: spacing.sm,
-  },
-  modeToggleButton: {
-    padding: `${spacing.xs} ${spacing.md}`,
-    background: colors.surface,
-    color: colors.textSecondary,
-    border: `1px solid ${colors.border}`,
-    borderRadius: radius.md,
-    fontSize: typography.sizes.sm,
-    fontWeight: '700',
-    fontFamily: typography.fontFamily,
-    cursor: 'pointer',
-  },
-  modeToggleButtonActive: {
-    background: colors.accentDim,
-    color: colors.textSecondary,
-    border: `1px solid ${colors.accent}80`,
-  },
-  generateButton: {
-    width: 'fit-content',
-    padding: `${spacing.sm} ${spacing.xl}`,
-    background: colors.accent,
-    color: '#FFFFFF',
-    border: 'none',
-    borderRadius: radius.md,
-    fontSize: typography.sizes.md,
-    fontWeight: '700',
-    fontFamily: typography.fontFamily,
-  },
-  progressBox: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: spacing.sm,
-    color: colors.textSecondary,
-    fontSize: typography.sizes.md,
-    fontFamily: typography.fontFamily,
-  },
-  spinner: {
-    width: '16px',
-    height: '16px',
-    borderRadius: '50%',
-    border: `2px solid ${colors.border}`,
-    borderTopColor: colors.accent,
-    animation: 'spin 1s linear infinite',
-  },
-  progressText: {
-    color: colors.textSecondary,
-  },
-  errorBox: {
-    padding: spacing.md,
-    background: colors.dangerDim,
-    color: colors.danger,
-    borderRadius: radius.md,
-    border: `1px solid ${colors.danger}`,
-    fontFamily: typography.fontFamily,
-  },
-  resultBox: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: spacing.sm,
-    padding: spacing.lg,
-    background: colors.surface,
-    border: `1px solid ${colors.border}`,
-    borderRadius: radius.lg,
-  },
-  resultLabel: {
-    color: colors.success,
-    fontSize: typography.sizes.sm,
-    fontWeight: '600',
-    fontFamily: typography.fontFamily,
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
-  },
-  resultText: {
-    color: colors.text,
-    fontSize: typography.sizes.lg,
-    fontWeight: '600',
-    fontFamily: typography.fontFamily,
-    lineHeight: 1.45,
-  },
-  encouragementText: {
-    color: colors.textSecondary,
-    fontSize: typography.sizes.md,
-    fontFamily: typography.fontFamily,
-    lineHeight: 1.6,
-    borderLeft: `3px solid ${colors.accent}`,
-    paddingLeft: spacing.md,
-  },
-  resultPath: {
-    color: colors.textTertiary,
-    fontSize: typography.sizes.sm,
-    fontFamily: typography.fontFamily,
-    wordBreak: 'break-all',
-  },
-  preview: {
-    width: '100%',
-    minHeight: '160px',
-    borderRadius: radius.md,
-    background: colors.surfaceElevated,
-    overflow: 'hidden',
-    color: colors.textSecondary,
-  },
-  previewImage: {
-    display: 'block',
-    width: '100%',
-    height: 'auto',
-    maxHeight: 'min(70vh, 720px)',
-    objectFit: 'contain',
-  },
-  previewError: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: spacing.sm,
-    padding: spacing.lg,
-  },
-  momentList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: spacing.xs,
-  },
-  momentItem: {
-    padding: spacing.sm,
-    background: colors.surfaceElevated,
-    border: `1px solid ${colors.border}`,
-    borderRadius: radius.md,
-  },
-  momentHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    color: colors.textTertiary,
-    fontSize: typography.sizes.xs,
-    fontFamily: typography.fontFamily,
-  },
-  momentTitle: {
-    color: colors.text,
-    fontSize: typography.sizes.sm,
-    fontWeight: '700',
-    fontFamily: typography.fontFamily,
-    marginTop: '4px',
-  },
-  momentWhy: {
-    color: colors.textSecondary,
-    fontSize: typography.sizes.sm,
-    fontFamily: typography.fontFamily,
-    marginTop: '4px',
-  },
-  emptyMonths: {
-    color: colors.textTertiary,
-    fontSize: typography.sizes.sm,
-    fontFamily: typography.fontFamily,
-  },
-  openFileButton: {
-    width: 'fit-content',
-    marginTop: spacing.xs,
-    padding: `${spacing.sm} ${spacing.lg}`,
-    background: colors.surfaceElevated,
-    color: colors.textSecondary,
-    border: `1px solid ${colors.border}`,
-    borderRadius: radius.md,
-    fontSize: typography.sizes.md,
-    fontWeight: '700',
-    fontFamily: typography.fontFamily,
-    cursor: 'pointer',
-  },
+  container: { height: '100%', overflowY: 'auto', padding: 28, color: colors.text, background: colors.background },
+  header: { display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' },
+  actions: { display: 'flex', flexWrap: 'wrap', gap: 12, margin: '20px 0' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 16 },
+  card: { minWidth: 0, background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 14, padding: 16 },
+  photo: { display: 'block', width: '100%', height: 210, objectFit: 'contain', marginBottom: 12, background: '#101820' },
+  quote: { width: '100%', minHeight: 260, padding: 22, display: 'flex', flexDirection: 'column', gap: 20,
+    alignItems: 'center', justifyContent: 'center', background: '#e4f6f2', color: '#23776c', fontSize: 20, lineHeight: 1.6 },
+  dialog: { position: 'fixed', inset: 0, background: '#0009', padding: 40, zIndex: 100, overflowY: 'auto' },
+  dialogBody: { maxWidth: 1000, margin: '0 auto', padding: 24, borderRadius: 16, background: colors.surface },
 };

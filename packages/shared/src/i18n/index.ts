@@ -3,13 +3,37 @@ import i18next from 'i18next';
 import en from './locales/en.json';
 import zhHans from './locales/zh-Hans.json';
 import zhHant from './locales/zh-Hant.json';
+import fr from './locales/fr.json';
+import de from './locales/de.json';
+import ru from './locales/ru.json';
+import ja from './locales/ja.json';
+import ko from './locales/ko.json';
+import it from './locales/it.json';
+import hu from './locales/hu.json';
+import pl from './locales/pl.json';
+import cs from './locales/cs.json';
+import ro from './locales/ro.json';
+import uk from './locales/uk.json';
+import hr from './locales/hr.json';
 
-export type SupportedLocale = 'en' | 'zh-Hans' | 'zh-Hant';
+export type SupportedLocale = 'en' | 'zh-Hans' | 'zh-Hant' | 'fr' | 'de' | 'ru' | 'ja' | 'ko' | 'it' | 'hu' | 'pl' | 'cs' | 'ro' | 'uk' | 'hr';
 
 export const SUPPORTED_LOCALES: Record<SupportedLocale, string> = {
   en: 'English',
   'zh-Hans': '简体中文',
   'zh-Hant': '繁體中文',
+  fr: 'Français',
+  de: 'Deutsch',
+  ru: 'Русский',
+  ja: '日本語',
+  ko: '한국어',
+  it: 'Italiano',
+  hu: 'Magyar',
+  pl: 'Polski',
+  cs: 'Čeština',
+  ro: 'Română',
+  uk: 'Українська',
+  hr: 'Hrvatski',
 };
 
 export function normalizeLocale(tag: string | null | undefined): SupportedLocale {
@@ -41,8 +65,8 @@ export function normalizeLocale(tag: string | null | undefined): SupportedLocale
     return 'zh-Hans';
   }
 
-  if (language === 'en') {
-    return 'en';
+  if (language && Object.prototype.hasOwnProperty.call(SUPPORTED_LOCALES, language)) {
+    return language as SupportedLocale;
   }
 
   return 'en';
@@ -52,6 +76,18 @@ const resources = {
   en: { translation: en },
   'zh-Hans': { translation: zhHans },
   'zh-Hant': { translation: zhHant },
+  fr: { translation: fr },
+  de: { translation: de },
+  ru: { translation: ru },
+  ja: { translation: ja },
+  ko: { translation: ko },
+  it: { translation: it },
+  hu: { translation: hu },
+  pl: { translation: pl },
+  cs: { translation: cs },
+  ro: { translation: ro },
+  uk: { translation: uk },
+  hr: { translation: hr },
 };
 
 export type LocaleResolutionOptions = {
@@ -87,7 +123,7 @@ export function initI18n(locale?: string): Promise<void> {
 
   return i18next.init({
     lng,
-    supportedLngs: ['en', 'zh-Hans', 'zh-Hant'],
+    supportedLngs: Object.keys(SUPPORTED_LOCALES),
     fallbackLng: {
       'zh-Hans': ['en'],
       'zh-Hant': ['en'],
@@ -109,7 +145,7 @@ export function initI18n(locale?: string): Promise<void> {
 
 /**
  * Switch the active language at runtime for tests or platform-provided system
- * locale changes. The app does not expose an in-app language switcher.
+ * locale changes. Desktop also exposes this through its language selector.
  */
 export function changeLanguage(locale: SupportedLocale): Promise<void> {
   return i18next.changeLanguage(locale).then(() => undefined);

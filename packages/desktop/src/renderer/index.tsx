@@ -37,22 +37,24 @@ document.addEventListener('pointerup', () => {
 const style = document.createElement('style');
 style.textContent = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  *:focus,
-  *:focus-visible {
-    outline: none !important;
-    outline-offset: 0 !important;
-  }
+  :focus-visible { outline: 2px solid ${colors.accent} !important; outline-offset: 3px !important; }
+  button, select, input { font: inherit; }
   button {
+    padding: 10px 16px; border: 1px solid ${colors.border}; border-radius: 10px;
+    background: ${colors.surface}; color: ${colors.text}; line-height: 1.45;
+    cursor: pointer; white-space: normal; overflow-wrap: break-word;
     appearance: none;
     -webkit-appearance: none;
     -webkit-tap-highlight-color: transparent;
   }
+  button:disabled { opacity: 0.55; cursor: default; }
+  button.primary-action { background: ${colors.accent}; color: ${colors.textOnStrong}; border-color: ${colors.accent}; }
+  p { line-height: 1.6; }
   button::-moz-focus-inner {
     border: 0;
   }
-  button:focus,
-  button:focus-visible,
-  button:active {
+  button:focus:not(:focus-visible),
+  button:active:not(:focus-visible) {
     outline: none !important;
     outline-offset: 0 !important;
     box-shadow: none;
@@ -60,9 +62,8 @@ style.textContent = `
   [role="button"] {
     -webkit-tap-highlight-color: transparent;
   }
-  [role="button"]:focus,
-  [role="button"]:focus-visible,
-  [role="button"]:active {
+  [role="button"]:focus:not(:focus-visible),
+  [role="button"]:active:not(:focus-visible) {
     outline: none !important;
     outline-offset: 0 !important;
     box-shadow: none;
@@ -93,6 +94,12 @@ style.textContent = `
   }
   ::-webkit-scrollbar-thumb:hover {
     background: ${colors.accent};
+  }
+  @container (max-width: 740px) {
+    .home-summary { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    .home-summary > :first-child { display: none !important; }
+    .home-summary > :nth-child(2) { grid-column: 1 / -1; }
+    .home-summary > :nth-child(n+3) { padding-left: 0 !important; border-left: 0 !important; }
   }
   ${CSS_VARIABLES}
 `;

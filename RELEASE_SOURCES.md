@@ -1,11 +1,13 @@
-# Windows release source
+# Release source of truth
 
-Repository: BlueVenn6/AlbumDone. Candidate branch: release/windows-20260921.
-Baseline: installed 0.1.2-beta.10, commit d4b5e6ca0781c7f72e50f4fc4068587360a99d55.
-Candidate version: 0.1.2-beta.13; Electron 44.4.3; sharp 0.35.5.
+The active desktop repository has its own `.git` directory and uses only `packages/desktop` and `packages/shared`.
 
-Use Node 22.12 or newer and npm ci. The postinstall step explicitly installs Electron 44's runtime. Mobile is maintained in a separate private repository; the old local monorepo master is not this release's source.
+Source → shared TypeScript output → Electron main/preload TypeScript output + Vite production renderer → electron-builder `app.asar` → NSIS installer → installed `AlbumDone.exe`.
 
-Production inputs are packages/desktop/src and packages/shared/src. TypeScript and Vite write packages/desktop/dist. Run npm --workspace @photo-manager/desktop run package from a clean, tested commit. The script rebuilds generated output, embeds dist/build-source.json, creates one NSIS installer under packages/desktop/release and writes build-record.json with source/lockfile identity and installer SHA-256. It rejects dirty or changing source.
+The application main entry is `packages/desktop/dist/main/index.js`; the production renderer is `dist/renderer/index.html`. Photo URLs use `protocol.handle('local-file')` and `pathToLocalFileUri`. The retired screenshot/AI/OCR source and old worktrees are outside this repository; Git history preserves prior public releases.
 
-Keep protocol.handle('local-file') and the existing production renderer entry dist/renderer/index.html. Test the exact installer or its packaged application with an isolated profile and fixture photos. A successful source test or build is not final artifact acceptance.
+`npm --workspace @photo-manager/desktop run package` requires clean committed source and records commit, source hashes, lockfile hash, time and artifact SHA-256. The manifest is embedded as `dist/build-source.json` and written beside the installer as `build-record.json`. Validate those identities and run `test:e2e` against the packaged executable before claiming runtime acceptance.
+
+Mobile build37 is frozen in a different independent repository. It is not rebuilt or changed by desktop commands.
+
+The release toolchain is Node.js 22.23.4 and npm 12.2.2. Use the pinned npm version before `npm ci`; older npm resolvers do not consistently apply security overrides to workspace dependencies.

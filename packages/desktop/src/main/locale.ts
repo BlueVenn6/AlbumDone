@@ -1,7 +1,9 @@
 import { app } from 'electron';
 import { execFile } from 'child_process';
 
-export type DesktopLocale = 'en' | 'zh-Hans' | 'zh-Hant';
+import { normalizeLocale, type SupportedLocale } from '@photo-manager/shared';
+
+export type DesktopLocale = SupportedLocale;
 
 let cachedDisplayLocale: string | null | undefined;
 
@@ -77,22 +79,5 @@ export async function readSystemDisplayLocale(): Promise<string | null> {
 }
 
 export function normalizeDesktopLocale(locale: string | null | undefined): DesktopLocale {
-  const normalized = (locale ?? '').replace(/_/g, '-').toLowerCase();
-  if (
-    normalized.startsWith('zh-tw')
-    || normalized.startsWith('zh-hk')
-    || normalized.startsWith('zh-mo')
-    || normalized.startsWith('zh-hant')
-  ) {
-    return 'zh-Hant';
-  }
-  if (
-    normalized === 'zh'
-    || normalized.startsWith('zh-cn')
-    || normalized.startsWith('zh-sg')
-    || normalized.startsWith('zh-hans')
-  ) {
-    return 'zh-Hans';
-  }
-  return 'en';
+  return normalizeLocale(locale);
 }

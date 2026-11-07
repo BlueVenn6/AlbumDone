@@ -78,6 +78,25 @@ async function main() {
   assert.strictEqual(currentV2Groups[0].confidence, 'possible');
   assert.deepStrictEqual(currentV2Groups[0].rejectedPhotoIds, []);
 
+  const originalDateNow = Date.now;
+  let fakeTime = 0;
+  const visualProgress = [];
+  Date.now = () => fakeTime++;
+  try {
+    await groupSimilarPhotosAsync(Array.from({ length: 20 }, (_, index) => ({
+      ...photo(index, 20), visualHash: baseHash,
+    })), {
+      yieldEvery: 100_000,
+      onProgress: (progress) => {
+        if (progress.stage === 'visual') visualProgress.push(progress);
+      },
+    });
+  } finally {
+    Date.now = originalDateNow;
+  }
+  assert(visualProgress.some(({ processed, total }) => processed < total),
+    'Long comparison work must yield before the fixed comparison-count limit');
+
   const sequenceHashes = [
     '5c186e5e5e536f6a',
     '2f6ed7df53564167',
@@ -171,6 +190,40 @@ async function main() {
   );
 
   console.log(`async dedupe benchmark passed: ${JSON.stringify(results)}`);
+  let candidateReads = 0;
+  let cancelCandidates = false;
+  const dense = Array.from({ length: 3000 }, (_, index) => Object.defineProperty(photo(index, 3000), 'visualHash', {
+    get() {
+      if (++candidateReads === 1) setTimeout(() => { cancelCandidates = true; }, 0);
+      return baseHash;
+    },
+  }));
+  await assert.rejects(groupSimilarPhotosAsync(dense, { shouldCancel: () => cancelCandidates }),
+    (error) => error.name === 'AbortError');
+  assert(candidateReads < dense.length, 'Cancellation must interrupt dense visual candidate construction, not wait until all candidates are built');
+  console.log('Dense visual candidate construction is interruptible');
+
+  let timestampReads = 0;
+  let cancelWithinNeighborSearch = false;
+  const cancellationThreshold = 300_000;
+  const crowded = Array.from({ length: 1200 }, (_, index) => {
+    const candidate = { ...photo(index, 1200), visualHash: baseHash };
+    const timestamp = candidate.timestamp;
+    return Object.defineProperty(candidate, 'timestamp', {
+      enumerable: true,
+      get() {
+        timestampReads += 1;
+        if (timestampReads === cancellationThreshold) cancelWithinNeighborSearch = true;
+        return timestamp;
+      },
+    });
+  });
+  await assert.rejects(groupSimilarPhotosAsync(crowded, {
+    shouldCancel: () => cancelWithinNeighborSearch,
+  }), (error) => error instanceof Error && error.name === 'AbortError');
+  assert(timestampReads - cancellationThreshold <= 256,
+    'Cancellation must be checked within a dense single-hash neighbor search');
+  console.log('Cancellation interrupts a dense individual neighbor search');
 }
 
 main().catch((error) => {

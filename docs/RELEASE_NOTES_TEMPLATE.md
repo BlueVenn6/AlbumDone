@@ -29,7 +29,7 @@ The current Windows installer is not code-signed yet. Windows SmartScreen may di
 
 ### Safety Notice
 
-Start with a copied test folder or a fully backed-up photo library. Review every similar-photo group and deletion candidate before confirming file operations. Similarity results and AI output are assistance, not safe-delete decisions.
+Start with a copied test folder or a fully backed-up photo library. Review every similar-photo group and deletion candidate before confirming file operations. Review similarity results before selecting files for deletion.
 
 ### Known Issues
 

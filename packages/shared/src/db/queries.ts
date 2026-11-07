@@ -38,7 +38,6 @@ interface DuplicateGroupRow {
 interface CullingDecisionRow {
   photo_id: string;
   decision: CullingDecision;
-  ai_decision: CullingDecision;
   decided_at: number | null;
 }
 
@@ -209,17 +208,17 @@ export async function resolveDuplicateGroup(
 }
 
 // --- Culling Decision Queries ---
+// Keep the inert legacy column populated for existing databases; no AI decision is read or generated.
 
 export async function upsertCullingDecision(
   db: DbAdapter,
   photoId: string,
   decision: CullingDecision,
-  aiDecision: CullingDecision,
 ): Promise<void> {
   await db.execute(
     `INSERT OR REPLACE INTO culling_decisions (photo_id, decision, ai_decision, decided_at)
      VALUES (?, ?, ?, ?)`,
-    [photoId, decision, aiDecision, decision !== 'pending' ? Date.now() : null],
+    [photoId, decision, 'pending', decision !== 'pending' ? Date.now() : null],
   );
 }
 
@@ -234,7 +233,6 @@ export async function getCullingItems(db: DbAdapter): Promise<CullingItem[]> {
   return rows.map((row) => ({
     photo: rowToPhoto(row),
     decision: row.decision,
-    aiDecision: row.ai_decision,
   }));
 }
 

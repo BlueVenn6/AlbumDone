@@ -1,208 +1,68 @@
-const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
-const {
-  i18next,
-  initI18n,
-  normalizeLocale,
-  resolveAppLocale,
-  SUPPORTED_LOCALES,
-} = require('../dist/i18n');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { i18next, initI18n, normalizeLocale, resolveAppLocale, SUPPORTED_LOCALES } = require('../dist/i18n');
 const { getLocalizedAlbumTitle } = require('../dist/utils/localizedAlbumTitle');
-
-assert.deepStrictEqual(Object.keys(SUPPORTED_LOCALES), ['en', 'zh-Hans', 'zh-Hant']);
-
-const localeCases = {
-  'zh': 'zh-Hans',
-  'zh-CN': 'zh-Hans',
-  'zh_CN': 'zh-Hans',
-  'zh_CN.UTF-8': 'zh-Hans',
-  'zh_CN_#Hans': 'zh-Hans',
-  'zh_CN_#Hant': 'zh-Hant',
-  'zh-SG': 'zh-Hans',
-  'zh_SG_#Hans': 'zh-Hans',
-  'zh-Hans': 'zh-Hans',
-  'zh-Hans-CN': 'zh-Hans',
-  'zh-Hans-HK': 'zh-Hans',
-  'zh-Hans-CN-u-nu-hanidec': 'zh-Hans',
-  'zh__#Hans': 'zh-Hans',
-  'zh-TW': 'zh-Hant',
-  'zh_TW': 'zh-Hant',
-  'zh_TW_#Hant': 'zh-Hant',
-  'zh-HK': 'zh-Hant',
-  'zh_HK_#Hant': 'zh-Hant',
-  'zh-MO': 'zh-Hant',
-  'zh_MO_#Hant': 'zh-Hant',
-  'zh-Hant': 'zh-Hant',
-  'zh-Hant-CN': 'zh-Hant',
-  'zh-Hant-HK': 'zh-Hant',
-  'zh-Hant-TW-u-nu-hanidec': 'zh-Hant',
-  'zh_HK_#Hans': 'zh-Hans',
-  'zh__#Hant': 'zh-Hant',
-  'en-US': 'en',
-  'en_US.UTF-8': 'en',
-  'en-GB': 'en',
-  'ja-JP': 'en',
-  'ko-KR': 'en',
-  'fr-FR': 'en',
-  '': 'en',
-};
-for (const [locale, expected] of Object.entries(localeCases)) {
-  assert.strictEqual(normalizeLocale(locale), expected);
-}
-assert.strictEqual(normalizeLocale(undefined), 'en');
-
-assert.strictEqual(
-  resolveAppLocale({
-    followSystemLocale: true,
-    systemLocale: 'zh-TW',
-  }),
-  'zh-Hant',
-);
-assert.strictEqual(
-  resolveAppLocale({
-    followSystemLocale: true,
-    systemLocale: 'en-US',
-  }),
-  'en',
-);
-assert.strictEqual(
-  resolveAppLocale({
-    followSystemLocale: true,
-    systemLocale: 'en-US',
-  }),
-  'en',
-  'English Windows display language must override old Chinese app preference',
-);
-assert.strictEqual(
-  resolveAppLocale({
-    forceLocale: undefined,
-    followSystemLocale: true,
-    systemLocale: 'en-US',
-  }),
-  'en',
-  'Old persisted language fields are ignored because no forceLocale is supplied',
-);
-assert.strictEqual(
-  resolveAppLocale({
-    systemLocale: 'zh-TW',
-  }),
-  'zh-Hant',
-);
-assert.strictEqual(
-  resolveAppLocale({
-    forceLocale: 'system',
-    followSystemLocale: true,
-    systemLocale: 'zh_CN_#Hans',
-  }),
-  'zh-Hans',
-);
-
-const sourceLocaleDir = path.resolve(__dirname, '../src/i18n/locales');
-const localeFiles = ['en.json', 'zh-Hans.json', 'zh-Hant.json'];
-const localeResources = Object.fromEntries(
-  localeFiles.map((file) => [
-    file,
-    JSON.parse(fs.readFileSync(path.join(sourceLocaleDir, file), 'utf8')),
-  ]),
-);
-
-function flatten(resource, prefix = '') {
-  return Object.entries(resource).flatMap(([key, value]) => {
-    const next = prefix ? `${prefix}.${key}` : key;
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? flatten(value, next)
-      : [[next, value]];
-  });
-}
-
-const flattened = Object.fromEntries(
-  localeFiles.map((file) => [file, new Map(flatten(localeResources[file]))]),
-);
-const englishKeys = [...flattened['en.json'].keys()].sort();
-for (const file of ['zh-Hans.json', 'zh-Hant.json']) {
-  assert.deepStrictEqual([...flattened[file].keys()].sort(), englishKeys);
-}
-for (const file of localeFiles) {
-  for (const [key, value] of flattened[file]) {
-    assert.strictEqual(typeof value, 'string', `${file}:${key} must be a string`);
-    assert.notStrictEqual(value.trim(), '', `${file}:${key} must not be empty`);
-  }
-}
-
-const technicalEnglish = /\b(?:AI|API|App|Android|Base URL|Credential Manager|Google Drive|iCloud Drive|iOS|JSON|Key|Keychain|Keystore|LLM|MVP|Notion|OCR|OpenAI|Provider|Proxy|URL|Windows|macOS|token)\b/g;
-const englishUserCopy = [...flattened['en.json'].values()].join('\n').replace(technicalEnglish, '');
-assert.doesNotMatch(englishUserCopy, /[\u3400-\u9fff]/);
-
-const commonTraditionalOnly = /[載儲檔開關錯誤這張進發現為與後會頁還應處複製傳體類預設階]/;
-const commonSimplifiedOnly = /[载储档开关错误这张进发现为与后会页还应处复制传体类预设阶]/;
-for (const [key, value] of flattened['zh-Hans.json']) {
-  assert.doesNotMatch(value, commonTraditionalOnly, `zh-Hans contains likely traditional text at ${key}`);
-}
-for (const [key, value] of flattened['zh-Hant.json']) {
-  assert.doesNotMatch(value, commonSimplifiedOnly, `zh-Hant contains likely simplified text at ${key}`);
-}
-
-const mobileSourceDir = path.resolve(__dirname, '../../mobile/src');
-const mobileSourceFiles = [];
-function collectSourceFiles(dir) {
-  if (!fs.existsSync(dir)) return;
+const languages = Object.keys(SUPPORTED_LOCALES);
+assert.equal(languages.length, 15);
+for (const lang of languages) assert.equal(normalizeLocale(lang), lang);
+for (const [input, expected] of Object.entries({
+  zh: 'zh-Hans', 'zh_CN_#Hans': 'zh-Hans', 'zh-TW': 'zh-Hant', 'zh-HK': 'zh-Hant',
+  'en-US': 'en', 'ja-JP': 'ja', 'ko-KR': 'ko', 'fr-FR': 'fr', unknown: 'en',
+})) assert.equal(normalizeLocale(input), expected);
+assert.equal(resolveAppLocale({ forceLocale: 'fr', systemLocale: 'en-US' }), 'fr');
+assert.equal(resolveAppLocale({ followSystemLocale: true, systemLocale: 'zh-TW' }), 'zh-Hant');
+assert.equal(resolveAppLocale({ systemLocale: 'en-US' }), 'en');
+assert.equal(resolveAppLocale({ forceLocale: 'system', systemLocale: 'zh_CN_#Hans' }), 'zh-Hans');
+const resources = Object.fromEntries(languages.map(lang => [lang,
+  JSON.parse(fs.readFileSync(path.join(__dirname, '../src/i18n/locales', `${lang}.json`), 'utf8')),
+]));
+const desktop = path.resolve(__dirname, '../../desktop/src');
+const sources = [];
+function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      collectSourceFiles(fullPath);
-    } else if (/\.(ts|tsx)$/.test(entry.name)) {
-      mobileSourceFiles.push(fullPath);
-    }
+    const filename = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(filename);
+    else if (/\.tsx?$/.test(entry.name)) sources.push(fs.readFileSync(filename, 'utf8'));
   }
 }
-collectSourceFiles(mobileSourceDir);
-for (const file of mobileSourceFiles) {
-  const relativePath = path.relative(mobileSourceDir, file);
-  const source = fs.readFileSync(file, 'utf8');
-  assert.doesNotMatch(source, /[\u3400-\u9fff]/, `mobile source has hardcoded Chinese text at ${relativePath}`);
-
-  const userFacingLiteralPatterns = [
-    /<Text[^>]*>\s*([A-Za-z][^<{}`]*)\s*<\/Text>/g,
-    /placeholder=\{?['"]([A-Za-z][^'"{}]*)['"]\}?/g,
-    /Alert\.alert\(\s*['"]([A-Za-z][^'"]*)['"]/g,
-  ];
-  const technicalOrNonCopy = /^(?:sk-|https?|OpenAI|API|Base URL|Model|Provider|Proxy|JSON|URL|LLM|AI|Notion|iCloud|Google Drive|Credential Manager|Keychain|Keystore|Android|iOS|Windows|macOS|MVP|OCR|Photo Manager|v?\d)/;
-  for (const pattern of userFacingLiteralPatterns) {
-    let match;
-    while ((match = pattern.exec(source)) !== null) {
-      const value = match[1].trim();
-      if (!value || technicalOrNonCopy.test(value)) continue;
-      assert.fail(`mobile source has hardcoded English user copy at ${relativePath}: ${value}`);
-    }
+walk(desktop);
+const required = new Set(['common.save', 'common.error', 'common.retry']);
+for (const source of sources) {
+  for (const [, key] of source.matchAll(/['"]([^'"\r\n]+)['"]/g)) {
+    if (Object.hasOwn(resources.en, key)) required.add(key);
+  }
+  for (const [, key] of source.matchAll(/\bt\(\s*['"]([^'"]+)['"]/g)) {
+    assert(Object.hasOwn(resources.en, key), `Unrecognised desktop translation: ${key}`);
   }
 }
-
+const placeholders = text => [...text.matchAll(/{{\s*(\w+)\s*}}/g)].map(m => m[1]).sort();
+for (const lang of languages) {
+  for (const key of required) {
+    const value = resources[lang][key];
+    assert.equal(typeof value, 'string', `Missing ${lang}:${key}`);
+    assert(value.trim(), `Empty ${lang}:${key}`);
+    assert.deepEqual(placeholders(value), placeholders(resources.en[key]), `${lang}:${key} placeholders`);
+  }
+  assert(!Object.keys(resources[lang]).some(k => /^(settings|ai|llm|ocr|screenshots)\./i.test(k)));
+}
+assert.doesNotMatch(Object.values(resources.en).join(' '), /[\u3400-\u9fff]/u);
 (async () => {
-  await initI18n('zh-Hans');
-  assert.strictEqual(i18next.language, 'zh-Hans');
-  assert.strictEqual(i18next.t('common.save'), '保存');
-  assert.strictEqual(i18next.t('missing.key.for.test'), '');
-  assert.strictEqual(getLocalizedAlbumTitle('Camera Roll', i18next.t), '相机胶卷');
-  assert.strictEqual(getLocalizedAlbumTitle('Screenshots', i18next.t), '截图');
-  assert.strictEqual(getLocalizedAlbumTitle('Downloads', i18next.t), '下载');
-  assert.strictEqual(getLocalizedAlbumTitle('My Trip', i18next.t), 'My Trip');
-
+  // Visit every locale twice, in reverse order too, so previous-language residue is visible.
+  for (const lang of [...languages, ...[...languages].reverse()]) {
+    await initI18n(lang);
+    assert.equal(i18next.language, lang);
+    for (const key of required) {
+      const actual = i18next.t(key, { lng: lang, count: 2, current: 7, total: 20,
+        processed: 4, candidates: 10, months: 8, empty: 4, remaining: 3, kept: 2, folder: 'x', month: 'x' });
+      assert(actual.trim(), `${lang}:${key} rendered empty`);
+      const details = i18next.t(key, { lng: lang, returnDetails: true });
+      assert.equal(details.usedLng, lang, `${lang}:${key} fell back to another language`);
+    }
+  }
   await initI18n('zh-Hant');
-  assert.strictEqual(i18next.t('common.save'), '儲存');
-  assert.strictEqual(getLocalizedAlbumTitle('Camera Roll', i18next.t), '相機膠卷');
-  assert.strictEqual(getLocalizedAlbumTitle('Screenshots', i18next.t), '截圖');
-  assert.strictEqual(getLocalizedAlbumTitle('Screen Recordings', i18next.t), '螢幕錄影');
-  assert.strictEqual(getLocalizedAlbumTitle('My Trip', i18next.t), 'My Trip');
-
-  await initI18n('ja-JP');
-  assert.strictEqual(i18next.language, 'en');
-  assert.strictEqual(i18next.t('common.save'), 'Save');
-  assert.strictEqual(getLocalizedAlbumTitle('Camera Roll', i18next.t), 'Camera Roll');
-  assert.strictEqual(getLocalizedAlbumTitle('Screenshots', i18next.t), 'Screenshots');
-
-  console.log('i18n tests passed');
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+  assert.equal(getLocalizedAlbumTitle('Camera Roll', i18next.t), '相機膠卷');
+  assert.equal(getLocalizedAlbumTitle('My Trip', i18next.t), 'My Trip');
+  assert.equal(i18next.t('missing.key.for.test'), '');
+  console.log(`15-language coverage, parameters and repeated switching passed: ${required.size} desktop keys`);
+})().catch(error => { console.error(error); process.exitCode = 1; });

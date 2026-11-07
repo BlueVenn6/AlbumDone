@@ -6,6 +6,7 @@ const {
   photoTaskBatchesMatch,
   parsePhotoTaskCheckpoint,
   preparePhotoTaskDeletion,
+  reconcilePhotoTaskDeletionResult,
   recordPhotoTaskDecision,
   recordPhotoTaskDeletionResult,
   resumePhotoTaskCheckpoint,
@@ -77,5 +78,13 @@ const remaining = getRemainingPhotoTaskDeletionIds(checkpoint);
 checkpoint = recordPhotoTaskDeletionResult(checkpoint, { committedIds: remaining }, 3003);
 assert.strictEqual(checkpoint.status, 'completed');
 assert.deepStrictEqual(getRemainingPhotoTaskDeletionIds(checkpoint), []);
+
+checkpoint = reconcilePhotoTaskDeletionResult(checkpoint, {
+  committedIds: checkpoint.deletion.requestedIds.slice(0, 100),
+  failedIds: checkpoint.deletion.requestedIds.slice(100),
+}, 3004);
+assert.strictEqual(checkpoint.status, 'deleting');
+assert.strictEqual(checkpoint.deletion.committedIds.length, 100);
+assert.strictEqual(getRemainingPhotoTaskDeletionIds(checkpoint).length, 5);
 
 console.log('task checkpoint/batch/resume tests passed');

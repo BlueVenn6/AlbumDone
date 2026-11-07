@@ -3,35 +3,14 @@ import { HashRouter as Router, Routes, Route, Navigate, useLocation, useNavigate
 import { HomeScreen } from './screens/HomeScreen';
 import { DeduplicationScreen } from './screens/DeduplicationScreen';
 import { CullingScreen } from './screens/CullingScreen';
-import { ScreenshotScreen } from './screens/ScreenshotScreen';
-import { SettingsScreen } from './screens/SettingsScreen';
 import { YearInReviewScreen } from './screens/YearInReviewScreen';
 import { colors, typography } from './theme';
-import { I18nProvider, useTranslation } from '@photo-manager/shared';
+import { I18nProvider, useTranslation, i18next, SUPPORTED_LOCALES, normalizeLocale } from '@photo-manager/shared';
 
 let activeSystemLocale = 'en';
 
 function getErrorBoundaryCopy(): { title: string; fallback: string; reload: string } {
-  const locale = activeSystemLocale.toLowerCase();
-  if (locale === 'zh' || locale.startsWith('zh-cn') || locale.startsWith('zh-sg') || locale.startsWith('zh-hans')) {
-    return {
-      title: '正好相册遇到渲染错误',
-      fallback: '界面加载失败，请重试。',
-      reload: '重新加载',
-    };
-  }
-  if (locale.startsWith('zh-tw') || locale.startsWith('zh-hk') || locale.startsWith('zh-mo') || locale.startsWith('zh-hant')) {
-    return {
-      title: '正好相冊遇到渲染錯誤',
-      fallback: '介面載入失敗，請重試。',
-      reload: '重新載入',
-    };
-  }
-  return {
-    title: 'AlbumDone hit a render error',
-    fallback: 'The interface failed to load. Please try again.',
-    reload: 'Reload',
-  };
+  return { title: i18next.t('common.error'), fallback: i18next.t('common.error'), reload: i18next.t('common.retry') };
 }
 
 class AppErrorBoundary extends React.Component<
@@ -159,15 +138,15 @@ function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const currentPath = location.pathname;
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   useEffect(() => {
     document.title = t('home.title');
-  }, [t]);
+    document.documentElement.lang = i18n.resolvedLanguage ?? i18n.language;
+  }, [t, i18n.resolvedLanguage, i18n.language]);
 
   const navItems = [
     { path: '/', icon: '■', label: t('home.library') },
-    { path: '/settings', icon: '⚙', label: t('settings.title') },
   ];
 
   return (
@@ -190,8 +169,9 @@ function AppLayout() {
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             gap: '12px',
+            flexDirection: 'column',
             padding: '0 8px 28px',
             borderBottom: `1px solid ${colors.sidebarBorder}`,
             marginBottom: '10px',
@@ -213,7 +193,10 @@ function AppLayout() {
           </span>
           <h1
             style={{
-              fontSize: '22px',
+              fontSize: '20px',
+              minWidth: 0,
+              overflowWrap: 'normal',
+              hyphens: 'auto',
               fontWeight: '700',
               color: colors.textOnStrong,
               margin: 0,
@@ -222,6 +205,17 @@ function AppLayout() {
             {t('home.title')}
           </h1>
         </div>
+
+        <select aria-label="Language" data-testid="language-select"
+          value={normalizeLocale(i18n.language)} style={{ width: '100%', minHeight: 42, padding: 8 }}
+          onChange={async event => {
+            const locale = event.target.value;
+            await window.electronAPI?.app.setLocale(locale);
+            await i18n.changeLanguage(locale);
+            localStorage.setItem('albumdone.locale', locale);
+          }}>
+          {Object.entries(SUPPORTED_LOCALES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+        </select>
 
         {/* Navigation items */}
         {navItems.map((item) => (
@@ -274,14 +268,12 @@ function AppLayout() {
       </div>
 
       {/* Main content */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <Routes>
           <Route path="/" element={<HomeScreen />} />
           <Route path="/deduplication" element={<DeduplicationScreen />} />
           <Route path="/culling" element={<CullingScreen />} />
-          <Route path="/screenshots" element={<ScreenshotScreen />} />
           <Route path="/year-in-review" element={<YearInReviewScreen />} />
-          <Route path="/settings" element={<SettingsScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
@@ -306,8 +298,10 @@ export default function App(): React.JSX.Element {
     void window.electronAPI.app.getLocale()
       .then((locale) => {
         if (isMounted) {
-          activeSystemLocale = locale || 'en';
-          setSystemLocale(locale);
+          const chosen = localStorage.getItem('albumdone.locale') ?? locale ?? 'en';
+          activeSystemLocale = chosen;
+          void window.electronAPI?.app.setLocale(chosen);
+          setSystemLocale(chosen);
         }
       })
       .catch(() => {

@@ -1,7 +1,4 @@
 import type { Photo } from '../types';
-import type { LLMClient } from '../api/llmClient';
-import type { ScreenshotAnalysis } from '../api/vision';
-import { analyzeScreenshot } from '../api/vision';
 
 export type ScreenshotDetectionInput = {
   filename: string;
@@ -212,17 +209,6 @@ export function isScreenshot(photo: Photo): boolean {
     extension: photo.extension,
     tags: photo.tags,
   }).isScreenshot;
-}
-
-/**
- * Classify a screenshot using LLM vision.
- * Wraps the vision API analyzeScreenshot function.
- */
-export async function classifyScreenshot(
-  imageBase64: string,
-  client: LLMClient,
-): Promise<ScreenshotAnalysis> {
-  return analyzeScreenshot(imageBase64, 'image/jpeg', client);
 }
 
 /**
