@@ -1,6 +1,6 @@
 # Desktop privacy / 桌面版隐私说明
 
-Applies to AlbumDone desktop 0.2.0 without AI features.
+Applies to AlbumDone desktop 0.2.1 without AI features.
 
 Photo scanning, thumbnails, similarity analysis, manual decisions and year-review rendering run locally. This desktop version contains no AI provider integration, OCR, account sign-in, advertisements, analytics SDK or automatic photo upload. Selecting a folder allows the application to read supported photos in that folder. Local data includes recent folder paths, a photo index, thumbnails, review checkpoints, logs and exported JPGs. These are stored in the application data directory; originals remain in the selected folders until a deletion is confirmed.
 
@@ -12,7 +12,7 @@ This document describes application behavior. App-store privacy declarations and
 
 ---
 
-适用于 AlbumDone 0.2.0 无 AI 桌面版。
+适用于 AlbumDone 0.2.1 无 AI 桌面版。
 
 照片扫描、缩略图、相似度分析、手动选择和年度回顾渲染均在本机执行。本桌面版不包含 AI 服务商接入、OCR、账户登录、广告、统计 SDK 或自动上传照片。选择文件夹后，应用可以读取其中支持的照片。本地保存的资料包括最近文件夹路径、照片索引、缩略图、任务进度、日志及导出的 JPG。原照片在确认删除之前仍位于所选文件夹。
 

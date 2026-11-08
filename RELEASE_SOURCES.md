@@ -11,3 +11,13 @@ The application main entry is `packages/desktop/dist/main/index.js`; the product
 Mobile build37 is frozen in a different independent repository. It is not rebuilt or changed by desktop commands.
 
 The release toolchain is Node.js 22.23.4 and npm 12.2.2. Use the pinned npm version before `npm ci`; older npm resolvers do not consistently apply security overrides to workspace dependencies.
+
+## 0.2.1 source publication
+
+The existing unsigned 0.2.1 artifact was built from commit
+`e493d1a6b226a326216cb44849e7ff1a8618b900`. The subsequent source-publication
+commit updates Markdown documentation only; it does not rebuild or rename that
+artifact. Its embedded source identity remains the original build commit.
+See [the release record](CHANGELOG.md) for the installer identity, verified
+behavior and unverified installation/signing steps. Any future signed build
+must receive its own source record and final, post-signing checksum.
