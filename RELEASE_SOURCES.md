@@ -15,9 +15,9 @@ The release toolchain is Node.js 22.23.4 and npm 12.2.2. Use the pinned npm vers
 ## 0.2.1 source publication
 
 The existing unsigned 0.2.1 artifact was built from commit
-`e493d1a6b226a326216cb44849e7ff1a8618b900`. The subsequent source-publication
-commit updates Markdown documentation only; it does not rebuild or rename that
-artifact. Its embedded source identity remains the original build commit.
+`e493d1a6b226a326216cb44849e7ff1a8618b900`. The source-publication updates change
+Markdown documentation only; they do not rebuild or rename that artifact.
+Its embedded source identity remains the original build commit.
 See [the release record](CHANGELOG.md) for the installer identity, verified
 behavior and unverified installation/signing steps. Any future signed build
 must receive its own source record and final, post-signing checksum.

@@ -10,6 +10,8 @@ The [release record](CHANGELOG.md) describes the verified changes, exact runtime
 
 The existing 0.2.1 installer is **unsigned**. Its packaged application passed the recorded functional checks, including fifteen-language layouts and JPG export. Installation over an existing version and upgrades have not been validated. SignPath signing remains a separate release step; see the [Code signing policy](CODE_SIGNING_POLICY.md).
 
+Dependency remediation is also pending: the full dependency audit reports affected packages, including the bundled Electron runtime. See the [release record](CHANGELOG.md) for the audit scope and known limitations.
+
 ## Workflows
 
 - Duplicate review: choose a quantity, inspect each group, change the photo to keep or keep the whole group. The large image is a preview of one group member. Review selections before confirming deletion. Completed batches return to quantity selection and retain folder progress.

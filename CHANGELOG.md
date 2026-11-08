@@ -61,6 +61,23 @@ overwriting an existing version and upgrades remain **State C**. SignPath
 approval/configuration and a signed release have not been validated. The
 checks do not cover every Windows version, display setup or photo format.
 
+### Dependency audit: 2026-11-08 UTC
+
+For the current lockfile, `npm audit --omit=dev --json` reported no affected
+packages. The full `npm audit --json` reported **18 affected dependency entries:
+1 critical, 8 high and 9 moderate**. These are npm's package-level counts, not
+counts of independently confirmed application exploits.
+
+The full report includes Electron 44.4.3, Vite and shell-quote. Electron is
+listed as a development dependency but supplies the runtime shipped with the
+application; excluding development dependencies does not establish the safety
+of the installed application. For example, the Electron version falls within
+the affected range of [GHSA-jr5w-w6x2-84p9](https://github.com/advisories/GHSA-jr5w-w6x2-84p9).
+
+Dependency remediation, exposure assessment and regression checks are required
+before a signed general release. This source-publication update does not apply
+dependency upgrades or change the existing artifact.
+
 This documentation update does not change the runtime source, lockfile or
 existing installer. A future signed build needs a new provenance record,
 post-signing checksum and acceptance of that exact artifact. See
@@ -96,6 +113,19 @@ Git 历史保留旧版本，当前应用不包含这些接入。
 上述已记录的包内运行检查属于 **State D**。安装器只查看了选项页和目录页，随后在安装前取消；
 系统安装、覆盖安装和升级仍属于 **State C**。SignPath 审批、配置和签名版本尚未验证，
 也没有覆盖所有 Windows 版本、显示器组合或照片格式。
+
+### 依赖审计：2026-11-08 UTC
+
+当前锁文件的 `npm audit --omit=dev --json` 未报告受影响的依赖项；
+全量 `npm audit --json` 报告 **18 个受影响的依赖项：1 项严重、8 项高风险、9 项中风险**。
+这是 npm 按依赖项统计的告警数量，不代表已经独立确认同等数量的应用可利用漏洞。
+
+全量结果包含 Electron 44.4.3、Vite 和 shell-quote。Electron 虽被列为开发依赖，
+实际提供安装包随附的运行时，因此不能用排除开发依赖后的零告警推断安装后应用安全。
+例如，该 Electron 版本位于 [GHSA-jr5w-w6x2-84p9](https://github.com/advisories/GHSA-jr5w-w6x2-84p9)
+标注的受影响范围内。
+
+正式签名发布前还需处理依赖风险、评估实际影响并执行回归。本次源码公开不升级依赖，也不改变现有安装包。
 
 本次只更新文档，不改变运行源码、锁文件和现有安装包。后续签名版本必须重新记录构建来源、
 签名后的哈希，并验收该确切交付物。参见[构建来源](RELEASE_SOURCES.md)、

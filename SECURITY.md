@@ -7,3 +7,12 @@ Report security issues privately to the repository maintainer before public disc
 The renderer does not have Node integration. High-risk IPC calls validate the sender and the chosen folder. Local photos use protocol.handle('local-file') with allowed roots. Permanent deletion requires a separate native confirmation. Continue checking root validation, symlinks, interrupted operations and provenance when changing these paths.
 
 See [PRIVACY.md](PRIVACY.md), [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md) and [RELEASE_SOURCES.md](RELEASE_SOURCES.md). Mobile signing and privacy declarations are managed in the separate private mobile repository.
+
+## 0.2.1 dependency status
+
+The 2026-11-08 UTC full npm audit reports 18 affected dependency entries,
+including the bundled Electron runtime. The production-only audit omits
+Electron because it is declared as a development dependency. The zero findings
+in that subset do not clear the installed application's runtime. Dependency
+remediation and regression verification remain prerequisites for a signed
+general release. See [the release record](CHANGELOG.md) for counts and scope.
