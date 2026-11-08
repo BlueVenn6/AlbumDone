@@ -21,3 +21,17 @@ Its embedded source identity remains the original build commit.
 See [the release record](CHANGELOG.md) for the installer identity, verified
 behavior and unverified installation/signing steps. Any future signed build
 must receive its own source record and final, post-signing checksum.
+
+## 0.2.2 security build
+
+Runtime source commit: `e154eb719a5d424fe36ffe8acec4217bfd61e146`.
+Build ID: `20261108T055749Z-e154eb71`. The exact unsigned installer is
+`AlbumDone-0.2.2-20261108T055749Z-e154eb71-x64.exe`, SHA-256
+`CF87999009DC01D067145159E5D0658B1BC4470006D2BA35AE0ACB78162338D1`.
+
+The post-build source update changes documentation and one acceptance-test
+selector. That script is outside the packaged application. Runtime source,
+lockfile, desktop package/build configuration and installer bytes remain those
+of the recorded runtime commit. Do not rebuild just to change this provenance
+documentation. Packaged-runtime acceptance passed against the extracted exact
+installer; system installation and upgrade acceptance remain outstanding.

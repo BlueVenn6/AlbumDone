@@ -8,9 +8,9 @@ An offline Windows photo organizer with duplicate review, manual review and a tw
 
 The [release record](CHANGELOG.md) records security maintenance in 0.2.2 and the previous 0.2.1 artifact's identity and acceptance. No new GitHub Release or signed installer is published by this source update; older release downloads belong to their listed versions.
 
-The existing 0.2.1 installer is **unsigned**. Its packaged application passed the recorded functional checks, including fifteen-language layouts and JPG export. Installation over an existing version and upgrades have not been validated. SignPath signing remains a separate release step; see the [Code signing policy](CODE_SIGNING_POLICY.md).
+The 0.2.2 installer is **unsigned**. Its exact packaged application passed eight recorded scenario groups, including fifteen-language layouts, JPG export and synthetic-photo deletion. The release record identifies its source and SHA-256. System installation, overwriting an existing version and upgrades have not been validated. SignPath signing remains a separate release step; see the [Code signing policy](CODE_SIGNING_POLICY.md).
 
-The 0.2.2 lockfile's full dependency audit reports zero affected entries on 2026-11-08 UTC, including checks of Electron and build tools. Local lint, typecheck and unit/integration tests passed. Exact 0.2.2 packaged-runtime acceptance and GitHub rescan results are tracked in the [release record](CHANGELOG.md); an audit result is not a guarantee against all vulnerabilities.
+The 0.2.2 lockfile's full dependency audit reports zero affected entries on 2026-11-08 UTC, including checks of Electron and build tools. Local lint, typecheck and unit/integration tests passed; GitHub's runtime-source rescan reported zero open Dependabot and CodeQL alerts. Scope and provenance are recorded in the [release record](CHANGELOG.md); these results are not a guarantee against all vulnerabilities.
 
 ## Workflows
 

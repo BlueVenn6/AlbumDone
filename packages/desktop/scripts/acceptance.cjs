@@ -256,7 +256,7 @@ async function main() {
     await until(`document.querySelectorAll('[data-month]').length === 12`, 'Year review must show twelve actual months');
     await until(`[...document.querySelectorAll('[data-month] img')].every(i => i.complete && i.naturalWidth > 0)`, 'Review images did not load');
     const originalReviewPhoto = await evaluate(`document.querySelector('[data-month] img').src`);
-    await pointer(`document.querySelector('[data-month] img').closest('article').querySelector('button')`);
+    await click('article[data-month]:has(img) button');
     await until(`document.querySelector('[role="dialog"]')`, 'Month photo chooser missing');
     await click('[role="dialog"] button[aria-pressed="false"]');
     await until(`!document.querySelector('[role="dialog"]')`, 'Photo chooser did not close');

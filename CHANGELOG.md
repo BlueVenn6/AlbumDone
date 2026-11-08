@@ -14,10 +14,44 @@
   Electron and build tools. The repaired lockfile audit reports zero affected
   entries on 2026-11-08 UTC. This is a point-in-time advisory check.
 
-Local lint, typecheck and unit/integration checks passed. Exact packaged-runtime
-acceptance and GitHub security rescanning are recorded separately below when
-available. The previous 0.2.1 artifact is unchanged. Signing, installation over
-an existing version and upgrades remain unvalidated for 0.2.2.
+Local lint, typecheck and unit/integration checks passed. GitHub CI and CodeQL
+passed for runtime source `e154eb719a5d424fe36ffe8acec4217bfd61e146`;
+Dependabot and CodeQL each reported zero open alerts after that scan.
+
+### Exact 0.2.2 artifact and acceptance
+
+| Item | Recorded value |
+| --- | --- |
+| Runtime source | `e154eb719a5d424fe36ffe8acec4217bfd61e146` |
+| Build ID | `20261108T055749Z-e154eb71` |
+| Installer | `AlbumDone-0.2.2-20261108T055749Z-e154eb71-x64.exe` |
+| Size | 139,262,747 bytes |
+| SHA-256 | `CF87999009DC01D067145159E5D0658B1BC4470006D2BA35AE0ACB78162338D1` |
+| Authenticode | Unsigned |
+
+The application extracted from this exact installer was launched. All 228
+extracted payload files matched the packaging output; 42 desktop and 96 shared
+compiled files matched the production output (TypeScript declarations are
+excluded by electron-builder). The embedded manifest matched the source and
+lockfile record, and the extracted executable reported Electron 44.10.2.
+
+Eight runtime scenario groups passed: isolated SQLite startup; a 100-photo
+no-match batch followed by the remaining 30; duplicate preview/keeper/keep-all/
+cancel/resume; manual navigation, undo and next batch; month-photo replacement
+and JPG export; readable Chinese JPG export; fifteen languages at 900 and 1280
+pixel widths, including a 30-photo duplicate group; and confirmed recycle-bin
+deletion of a synthetic duplicate. No renderer exceptions were recorded.
+
+The initial acceptance run stopped because one month-chooser test still passed
+an executable expression to the new selector API. The follow-up changes that
+test call to an equivalent CSS selector, preserving the photo-replacement
+assertion. The complete test then passed against the same installer. No runtime
+source, dependency lock, production output or installer was changed or rebuilt.
+
+This is **State D for the recorded packaged-runtime checks**. Actual system
+installation, overwriting a previous installation, upgrades and SignPath signing
+remain unvalidated (**State C for the installer**). The previous 0.2.1 artifact
+is unchanged. No new GitHub Release is created by this source update.
 
 ### 简体中文
 
@@ -27,8 +61,19 @@ CDP 参数传递文字和选择器，保留真实鼠标操作并增加恶意字�
 CI 和签名质量门禁检查完整依赖，避免漏掉实际随应用交付的 Electron。
 2026-11-08 UTC 的修补后锁文件审计报告 0 个受影响依赖项。
 
-本地 lint、类型及单元/集成检查通过；确切安装包内程序验收和 GitHub 复扫结果
-另行记录。0.2.1 安装包不变。0.2.2 的签名、覆盖安装和升级尚未验收。
+本地 lint、类型及单元/集成检查通过；上述运行源码的 GitHub CI、CodeQL 通过，
+Dependabot 和 CodeQL 开放告警均为 0。确切 0.2.2 安装包身份见上表。
+
+从该安装包解出的程序已启动：228 个解出文件与打包输出一致，42 个桌面和 96 个
+共享编译文件与生产输出一致，嵌入的源码记录一致，实际 Electron 为 44.10.2。
+完整运行验收通过，覆盖批次返回与继续、去重预览/更换保留/整组保留/取消/恢复、
+手动前后查看/撤销/下一批、年度回顾换图与中文 JPG 实际导出、15 种语言和两种
+窗口宽度、30 张大组操作及一张合成测试照片的真实回收站删除。
+
+首轮验收因测试脚本漏改一处控件定位调用而停止；修正为等价 CSS 选择器，保留
+原有换图断言后，使用同一个安装包通过完整验收。未改应用源码、锁文件或包内容，
+没有重复打包。包内程序检查为 State D；系统安装、覆盖、升级及签名尚未验收，
+安装器仍为 State C。0.2.1 安装包不变，本次不创建 GitHub Release。
 
 # AlbumDone 0.2.1
 
