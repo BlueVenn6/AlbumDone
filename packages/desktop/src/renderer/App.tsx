@@ -229,9 +229,9 @@ function AppLayout() {
           />
         ))}
 
-        <div style={{
+        <div data-testid="local-processing-info" style={{
           marginTop: 'auto',
-          padding: '18px',
+          padding: '14px',
           border: `1px solid ${colors.sidebarBorder}`,
           borderRadius: '10px',
           background: 'rgba(255,255,255,0.035)',
@@ -240,15 +240,16 @@ function AppLayout() {
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
+            gap: '8px',
             marginBottom: '10px',
             fontSize: '14px',
             fontWeight: typography.weights.bold,
           }}>
             <span style={{
               display: 'inline-flex',
-              width: '28px',
-              height: '28px',
+              width: '24px',
+              height: '24px',
+              flexShrink: 0,
               alignItems: 'center',
               justifyContent: 'center',
               borderRadius: '8px',

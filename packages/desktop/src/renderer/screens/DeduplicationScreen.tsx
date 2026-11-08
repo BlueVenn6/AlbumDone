@@ -853,8 +853,8 @@ function DedupeGroupCard({
         <div style={styles.groupBody}>
           <p>{t('dedup.groupPreview', { current: group.photos.findIndex((photo) => photo.id === preview.id) + 1, total: group.photos.length })}</p>
           <GroupPreview photo={preview} />
-          <button style={styles.cancelBtn} onClick={onKeepAll}>{t('dedup.keepGroupAll')}</button>
-          <DedupePhotoGrid group={group} rejectedPhotoIds={rejectedPhotoIds} onToggleSelection={onToggleSelection} onPreview={setPreviewId} onKeepOnly={onKeepOnly} previewId={preview.id} />
+          <button data-testid="dedupe-keep-all" style={{ ...styles.cancelBtn, margin: '16px 0' }} onClick={onKeepAll}>{t('dedup.keepGroupAll')}</button>
+          <DedupePhotoGrid group={group} rejectedPhotoIds={rejectedPhotoIds} onToggleSelection={onToggleSelection} onPreview={setPreviewId} onKeepOnly={(photoId) => { setPreviewId(photoId); onKeepOnly(photoId); }} previewId={preview.id} />
         </div>
       )}
     </div>
@@ -902,7 +902,6 @@ function DedupePhotoGrid({ group, rejectedPhotoIds, onToggleSelection, onPreview
                 <div
                   key={photo.id}
                   data-testid="dedupe-thumbnail"
-                  onClick={() => onPreview(photo.id)}
                   style={{
                     ...styles.photoCard,
                     ...(virtualized ? {
@@ -915,24 +914,26 @@ function DedupePhotoGrid({ group, rejectedPhotoIds, onToggleSelection, onPreview
                     borderColor: isKept ? colors.success : colors.danger,
                   }}
                 >
-                  <DedupeThumbnail photo={photo} dimmed={!isKept} />
-                  {!isKept && (
-                    <div style={styles.deleteOverlay}>
-                      <span style={styles.deleteIcon}>✗</span>
-                    </div>
-                  )}
+                  <button data-testid="dedupe-preview" onClick={() => onPreview(photo.id)}
+                    aria-label={`${t('dedup.groupPreview', { current: startIndex + offset + 1, total: group.photos.length })}: ${photo.filename}`}
+                    aria-pressed={photo.id === previewId} style={{ padding: 0, border: 0, borderRadius: 0, background: 'none', flexShrink: 0 }}>
+                    <DedupeThumbnail photo={photo} dimmed={false} />
+                  </button>
                   <div
                     style={{
                       ...styles.decisionBadge,
                       background: isKept ? colors.success : colors.danger,
                     }}
                   >
-                    {isKept ? `✓ ${t('dedup.keepingLabel')}` : t('dedup.rejectedLabel')}
+                    {isKept ? t('dedup.keepingLabel') : t('dedup.toDelete', { count: 1 })}
                   </div>
                   <span style={styles.photoFilename}>{photo.filename}</span>
-                  {photo.id === previewId && <small>{t('dedup.previewingLabel')}</small>}
-                  <button style={styles.cancelBtn} onClick={(event) => { event.stopPropagation(); onKeepOnly(photo.id); }}>{t('dedup.keepOnlyThis')}</button>
-                  <button style={styles.cancelBtn} onClick={(event) => { event.stopPropagation(); onToggleSelection(photo.id); }}>{t(isRejected ? 'dedup.keepThisBtn' : 'dedup.markDeleteBtn')}</button>
+                  <small style={{ minHeight: 20, textAlign: 'center', color: colors.textSecondary }}>{photo.id === previewId ? t('dedup.previewingLabel') : '\u00a0'}</small>
+                  <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <button data-testid="dedupe-keep-only" style={styles.cancelBtn} onClick={() => onKeepOnly(photo.id)}>{t('dedup.keepOnlyThis')}</button>
+                    <button data-testid="dedupe-toggle-delete" disabled={isKept && group.photos.length - rejectedPhotoIds.size === 1}
+                      style={styles.cancelBtn} onClick={() => onToggleSelection(photo.id)}>{t(isRejected ? 'dedup.keepThisBtn' : 'dedup.markDeleteBtn')}</button>
+                  </div>
                 </div>
               );
             })}

@@ -607,6 +607,8 @@ export function CullingScreen(): React.JSX.Element {
       onKeep={() => triggerDecision('keep')}
       onDelete={() => triggerDecision('delete')}
       onUndo={handleUndo}
+      onPrev={() => { if (overlayTimer.current === null) goToPrev(); }}
+      onNext={() => { if (overlayTimer.current === null) goToNext(); }}
       onSwitchView={() => setViewMode('grid')}
       albumTitle={albumTitle}
       onBack={handleExit}
@@ -623,6 +625,8 @@ function FullscreenCullingView({
   onKeep,
   onDelete,
   onUndo,
+  onPrev,
+  onNext,
   onSwitchView,
   albumTitle,
   onBack,
@@ -635,6 +639,8 @@ function FullscreenCullingView({
   onKeep: () => void;
   onDelete: () => void;
   onUndo: () => void;
+  onPrev: () => void;
+  onNext: () => void;
   onSwitchView: () => void;
   albumTitle: string;
   onBack: () => void;
@@ -723,16 +729,17 @@ function FullscreenCullingView({
 
       {/* Bottom controls */}
       <div style={styles.bottomBar}>
+        <button data-testid="culling-prev" onClick={onPrev} disabled={currentIndex === 0 || overlay !== null}
+          style={styles.navigationBtn} aria-label={t('culling.previousPhoto')} title={t('culling.previousPhoto')}>‹</button>
         <button data-testid="culling-delete" onClick={onDelete} style={styles.deleteBtn} title={t('culling.deleteHint')}>
           ✗ {t('common.delete')}
         </button>
-        <div style={styles.keyHintRow}>
-          <span style={styles.keyHint}>{t('culling.deleteHint')}</span>
-          <span style={styles.keyHint}>{t('culling.keepHint')}</span>
-        </div>
+        <span style={styles.keyHint}>{currentIndex + 1} / {totalItems}</span>
         <button data-testid="culling-keep" onClick={onKeep} style={styles.keepBtn} title={t('culling.keepHint')}>
           ✓ {t('common.keep')}
         </button>
+        <button data-testid="culling-next" onClick={onNext} disabled={currentIndex >= totalItems - 1 || overlay !== null}
+          style={styles.navigationBtn} aria-label={t('culling.nextPhoto')} title={t('culling.nextPhoto')}>›</button>
       </div>
     </div>
   );
@@ -1374,10 +1381,13 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
+    flexShrink: 0,
     padding: `${spacing.md} ${spacing.xl}`,
     background: colors.background,
     borderTop: `1px solid ${colors.border}`,
   },
+  navigationBtn: { minWidth: 44, minHeight: 44, padding: '4px 12px', fontSize: 28, lineHeight: 1, color: colors.text },
   deleteBtn: {
     padding: `${spacing.sm} ${spacing.xl}`,
     background: colors.dangerDim,

@@ -339,6 +339,16 @@ function wrapText(context: any, text: string, maxWidth: number): string[] {
   return lines;
 }
 
+// Skia's generic sans-serif resolves differently from Chromium on Windows.
+// Name the installed text families explicitly so CJK glyphs use text fonts.
+function reviewFont(locale: string, size: number, bold = false): string {
+  const cjk = locale === 'ja' ? '"Yu Gothic", "Meiryo", "Microsoft YaHei"'
+    : locale === 'ko' ? '"Malgun Gothic", "Microsoft YaHei"'
+      : locale === 'zh-Hant' ? '"Microsoft JhengHei", "Microsoft YaHei"'
+        : '"Microsoft YaHei", "Microsoft JhengHei"';
+  return `${bold ? 'bold ' : ''}${size}px "Segoe UI", ${cjk}, "Arial", sans-serif`;
+}
+
 /** Render the exact choices currently shown in the editor, without selecting again. */
 export async function exportYearReview(
   months: ReviewMonth[], outputDir: string, localeTag = 'en',
@@ -357,14 +367,14 @@ export async function exportYearReview(
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#f2f6fa'; ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = '#152b45'; ctx.font = 'bold 30px sans-serif';
+  ctx.fillStyle = '#152b45'; ctx.font = reviewFont(locale, 30, true);
   ctx.fillText(i18next.t('yearInReview.title'), margin, 42);
   for (const [index, month] of months.entries()) {
     if (typeof month.quote !== 'string' || month.quote.length > 500) throw new Error('Invalid review caption.');
     const x = margin + index % 4 * (cardWidth + gap);
     const y = heading + margin + Math.floor(index / 4) * (cardHeight + gap);
     ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, cardWidth, cardHeight);
-    ctx.fillStyle = '#152b45'; ctx.font = 'bold 19px sans-serif';
+    ctx.fillStyle = '#152b45'; ctx.font = reviewFont(locale, 19, true);
     const label = new Date(Math.floor(month.monthId / 12), month.monthId % 12, 1)
       .toLocaleDateString(locale, { year: 'numeric', month: 'long' });
     ctx.fillText(label, x + 16, y + 30, cardWidth - 32);
@@ -378,7 +388,7 @@ export async function exportYearReview(
       ctx.drawImage(image, x + (cardWidth - w) / 2, y + 48 + (268 - h) / 2, w, h);
     } else {
       ctx.fillStyle = '#e4f6f2'; ctx.fillRect(x + 12, y + 48, cardWidth - 24, 268);
-      ctx.fillStyle = '#23776c'; ctx.font = '21px sans-serif';
+      ctx.fillStyle = '#23776c'; ctx.font = reviewFont(locale, 21);
       const lines = wrapText(ctx, month.quote, cardWidth - 64);
       if (lines.length > 8) throw new Error('Review caption does not fit.');
       lines.forEach((line, row) => ctx.fillText(line, x + 32, y + 170 - lines.length * 14 + row * 28));

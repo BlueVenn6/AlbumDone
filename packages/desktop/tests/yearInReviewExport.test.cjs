@@ -39,6 +39,19 @@ const now = new Date(2026, 6, 25, 12);
       assert.equal(result.emptyMonths.length, 11);
       const canvas = createCanvas(image.width, image.height); const ctx = canvas.getContext('2d');
       ctx.drawImage(image, 0, 0);
+      if (process.env.ALBUMDONE_EXPORT_EVIDENCE) {
+        fs.mkdirSync(process.env.ALBUMDONE_EXPORT_EVIDENCE, { recursive: true });
+        fs.copyFileSync(result.outputPath, path.join(process.env.ALBUMDONE_EXPORT_EVIDENCE, `${locale}.jpg`));
+      }
+      // A JPEG can exist while its CJK text is only tiny missing-glyph boxes.
+      // Check the actual title ink height, not merely the output dimensions.
+      const title = ctx.getImageData(20, 8, 1400, 45).data;
+      const inkRows = new Set();
+      for (let y = 0; y < 45; y++) for (let x = 0; x < 1400; x++) {
+        const offset = (y * 1400 + x) * 4;
+        if (title[offset] < 100 && title[offset + 1] < 110 && title[offset + 2] < 130) inkRows.add(y);
+      }
+      assert(inkRows.size >= 20, `${locale}: exported title must be readable text, not compressed missing-glyph boxes`);
       const pixel = ctx.getImageData(150, 200, 1, 1).data;
       assert(Math.min(...pixel.slice(0, 3)) > 100, `${locale}: blank month must contain a light card`);
     }

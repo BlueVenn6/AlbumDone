@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { createAlbumSnapshot, usePhotoStore, useTranslation } from '@photo-manager/shared';
+import { createAlbumSnapshot, usePhotoStore, i18next } from '@photo-manager/shared';
 import type { Photo } from '@photo-manager/shared';
 import { getCachedAlbumPhotos, setCachedAlbumPhotos } from '../utils/photoSessionCache';
 import { setCachedAlbumCount } from '../utils/albumCountCache';
@@ -25,7 +25,6 @@ export function useLoadPhotos(
   const [error, setError] = useState<string | null>(null);
   const [loadedCount, setLoadedCount] = useState(0);
   const { addPhotos, loadPhotos } = usePhotoStore();
-  const { t } = useTranslation();
 
   useEffect(() => {
     if (!folderPath || !window.electronAPI?.getPhotos) {
@@ -78,7 +77,7 @@ export function useLoadPhotos(
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : t('home.errors.loadPhotos'));
+        setError(err instanceof Error ? err.message : i18next.t('home.errors.loadPhotos'));
         setLoading(false);
       });
 
@@ -86,7 +85,7 @@ export function useLoadPhotos(
       cancelled = true;
       void window.electronAPI?.cancelPhotoScan(scanId).catch(() => null);
     };
-  }, [addPhotos, folderPath, loadPhotos, mode, t]);
+  }, [addPhotos, folderPath, loadPhotos, mode]);
 
   return { loading, error, loadedCount };
 }

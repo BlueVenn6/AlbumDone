@@ -59,13 +59,16 @@ export function YearInReviewScreen(): React.JSX.Element {
       <p>{t('yearInReview.intro')}</p>
       <div style={styles.actions}>
         {(['rolling', 'previousYear'] as const).map(mode => <button key={mode}
+          data-testid={`year-range-${mode}`}
+          style={timeMode === mode ? styles.selectedOption : undefined}
           aria-pressed={timeMode === mode} disabled={busy} onClick={() => {
             setTimeMode(mode); setMonths([]); setOutputPath(''); setChoosingMonth(null);
           }}>{t(mode === 'rolling' ? 'yearInReview.last12Months' : 'yearInReview.previousYear')}</button>)}
-        <button className="primary-action" disabled={busy} onClick={() => void generate()}>
+        <button data-testid="year-generate" className="primary-action" disabled={busy} onClick={() => void generate()}>
           {t(busy ? 'common.loading' : 'yearInReview.generate')}
         </button>
       </div>
+      {busy && <p role="status" aria-live="polite">{t('common.loading')}</p>}
       {error && <p role="alert">{t(error)}</p>}
       {months.length > 0 && <>
         <p role="status">{t('yearInReview.coverage', { months: summary.covered, empty: summary.empty })}</p>
@@ -74,7 +77,7 @@ export function YearInReviewScreen(): React.JSX.Element {
             const quotes = pickMonthEncouragements(locale, months.length);
             update(months.map((month, index) => ({ ...month, quote: quotes[index]! })));
           }}>{t('yearInReview.shuffleCards')}</button>
-          <button className="primary-action" disabled={busy || failedImages.size > 0} onClick={() => void save()}>{t('common.save')}</button>
+          <button data-testid="year-save" className="primary-action" disabled={busy || failedImages.size > 0} onClick={() => void save()}>{t('common.save')}</button>
         </div>
         <div data-testid="year-review-months" style={styles.grid}>
           {months.map(month => <article key={month.key} data-month={month.monthId} style={styles.card}>
@@ -123,6 +126,7 @@ export function YearInReviewScreen(): React.JSX.Element {
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  selectedOption: { background: colors.accentDim, color: colors.accent, borderColor: colors.accent, boxShadow: `inset 0 0 0 1px ${colors.accent}`, fontWeight: 600 },
   container: { height: '100%', overflowY: 'auto', padding: 28, color: colors.text, background: colors.background },
   header: { display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' },
   actions: { display: 'flex', flexWrap: 'wrap', gap: 12, margin: '20px 0' },

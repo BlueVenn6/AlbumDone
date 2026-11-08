@@ -1,6 +1,6 @@
 {
   "name": "@photo-manager/desktop",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "AlbumDone - offline photo deduplication, manual review and year in review",
   "author": "AlbumDone",
   "private": true,
@@ -43,7 +43,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "AlbumDone"
+      "shortcutName": "AlbumDone",
+      "include": "build/installer.nsh"
     }
   },
   "scripts": {
