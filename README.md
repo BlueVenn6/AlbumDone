@@ -2,15 +2,15 @@
 
 # AlbumDone
 
-An offline Windows photo organizer with duplicate review, manual review and a twelve-month photo review. The current desktop version is **0.2.1 without AI features**, licensed under MIT. The public repository history is retained.
+An offline Windows photo organizer with duplicate review, manual review and a twelve-month photo review. The current desktop source is **0.2.2 without AI features**, licensed under MIT. The public repository history is retained.
 
-## Version 0.2.1
+## Version 0.2.2
 
-The [release record](CHANGELOG.md) describes the verified changes, exact runtime source commit and installer checksum. This update publishes the desktop source and documentation. A 0.2.1 installer has not been attached to a GitHub Release by this source update; older release downloads belong to their listed versions.
+The [release record](CHANGELOG.md) records security maintenance in 0.2.2 and the previous 0.2.1 artifact's identity and acceptance. No new GitHub Release or signed installer is published by this source update; older release downloads belong to their listed versions.
 
 The existing 0.2.1 installer is **unsigned**. Its packaged application passed the recorded functional checks, including fifteen-language layouts and JPG export. Installation over an existing version and upgrades have not been validated. SignPath signing remains a separate release step; see the [Code signing policy](CODE_SIGNING_POLICY.md).
 
-Dependency remediation is also pending: the full dependency audit reports affected packages, including the bundled Electron runtime. See the [release record](CHANGELOG.md) for the audit scope and known limitations.
+The 0.2.2 lockfile's full dependency audit reports zero affected entries on 2026-11-08 UTC, including checks of Electron and build tools. Local lint, typecheck and unit/integration tests passed. Exact 0.2.2 packaged-runtime acceptance and GitHub rescan results are tracked in the [release record](CHANGELOG.md); an audit result is not a guarantee against all vulnerabilities.
 
 ## Workflows
 

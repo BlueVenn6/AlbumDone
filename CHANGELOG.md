@@ -1,3 +1,35 @@
+# AlbumDone release notes
+
+## 0.2.2 — Security maintenance
+
+- Upgrade the bundled Electron runtime from 44.4.3 to 44.10.2 and Vite from
+  6.4.3 to 6.4.5. Update the affected compatible transitive dependencies.
+- Override affected minimatch 7–10 resolutions to 11.0.1. Existing packaging
+  glob behavior passed 192 before/after comparisons; older unaffected
+  minimatch 3 and 5 resolutions remain unchanged.
+- Pass acceptance-test selectors, button text and language values as CDP
+  arguments instead of interpolating them into executable JavaScript. Preserve
+  pointer interaction and add adversarial argument/transport regression checks.
+- Require a full dependency audit in CI and the signing quality gate, including
+  Electron and build tools. The repaired lockfile audit reports zero affected
+  entries on 2026-11-08 UTC. This is a point-in-time advisory check.
+
+Local lint, typecheck and unit/integration checks passed. Exact packaged-runtime
+acceptance and GitHub security rescanning are recorded separately below when
+available. The previous 0.2.1 artifact is unchanged. Signing, installation over
+an existing version and upgrades remain unvalidated for 0.2.2.
+
+### 简体中文
+
+0.2.2 更新 Electron 同主版本修补版、Vite 及受影响的间接依赖；针对受影响的
+minimatch 增加限定范围覆盖，并完成 192 项原有文件匹配行为对照。验收脚本通过
+CDP 参数传递文字和选择器，保留真实鼠标操作并增加恶意字符及连接中断回归。
+CI 和签名质量门禁检查完整依赖，避免漏掉实际随应用交付的 Electron。
+2026-11-08 UTC 的修补后锁文件审计报告 0 个受影响依赖项。
+
+本地 lint、类型及单元/集成检查通过；确切安装包内程序验收和 GitHub 复扫结果
+另行记录。0.2.1 安装包不变。0.2.2 的签名、覆盖安装和升级尚未验收。
+
 # AlbumDone 0.2.1
 
 ## English

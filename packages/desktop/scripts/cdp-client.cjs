@@ -60,6 +60,26 @@ async function connectToAlbumDone(port) {
     }
     return response.result.value;
   };
+  const callFunction = async (fn, ...args) => {
+    const context = await send('Runtime.evaluate', { expression: 'globalThis' });
+    const objectId = context.result?.objectId;
+    if (!objectId) throw new Error('Renderer execution context was not found.');
+    try {
+      const response = await send('Runtime.callFunctionOn', {
+        objectId,
+        functionDeclaration: fn.toString(),
+        arguments: args.map((value) => ({ value })),
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (response.exceptionDetails) {
+        throw new Error(response.exceptionDetails.exception?.description || 'Renderer function failed.');
+      }
+      return response.result.value;
+    } finally {
+      await send('Runtime.releaseObject', { objectId });
+    }
+  };
   const waitFor = async (expression, timeoutMs = 30000) => {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
@@ -68,17 +88,16 @@ async function connectToAlbumDone(port) {
     }
     throw new Error(`Timed out waiting for: ${expression}`);
   };
-  const click = (labels, exact = false) => evaluate(`(() => {
-    const labels = ${JSON.stringify(labels.map((label) => label.toLowerCase()))};
+  const click = (labels, exact = false) => callFunction(function (labels, exact) {
     const button = [...document.querySelectorAll('button')].find((item) => {
       const text = (item.textContent || '').trim().toLowerCase();
-      return labels.some((label) => ${exact ? 'text === label' : 'text.includes(label)'});
+      return labels.some((label) => exact ? text === label : text.includes(label));
     });
     if (!button || button.disabled) return false;
     button.click();
     return true;
-  })()`);
-  return { socket, send, evaluate, waitFor, click };
+  }, labels.map((label) => label.toLowerCase()), exact);
+  return { socket, send, evaluate, callFunction, waitFor, click };
 }
 
 module.exports = { connectToAlbumDone };

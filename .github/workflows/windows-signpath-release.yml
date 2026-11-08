@@ -51,7 +51,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run icons:audit
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          npm audit --omit=dev --audit-level=high
+          npm audit --audit-level=low
 
   build-sign-verify:
     if: vars.SIGNPATH_ENABLED == 'true'

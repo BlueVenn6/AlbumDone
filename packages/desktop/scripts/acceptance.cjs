@@ -98,6 +98,7 @@ async function main() {
     socket = client.socket;
     const command = client.send;
     const evaluate = client.evaluate;
+    const callFunction = client.callFunction;
     socket.on('message', raw => {
       const message = JSON.parse(String(raw));
       if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails.text);
@@ -107,17 +108,26 @@ async function main() {
         void command('Page.handleJavaScriptDialog', { accept: allowDeletionConfirmation }).catch(error => errors.push(error.message));
       }
     });
-    async function until(expression, message, timeout = 120000) {
+    async function until(expression, message, timeout = 120000, args = []) {
       const started = Date.now();
       while (Date.now() - started < timeout) {
-        if (await evaluate(`Boolean(${expression})`)) return;
+        const result = typeof expression === 'function'
+          ? await callFunction(expression, ...args)
+          : await evaluate(`Boolean(${expression})`);
+        if (result) return result;
         await pause(100);
       }
       throw new Error(`${message}\n${await evaluate('document.body.innerText')}`);
     }
-    async function pointer(expression) {
-      await until(expression, `Missing pointer target: ${expression}`);
-      const point = await evaluate(`(() => { const element = ${expression};
+    async function pointer(selector, match = {}) {
+      const point = await until(function (selector, match) {
+        const elements = Array.from(document.querySelectorAll(selector));
+        const element = match.text !== undefined
+          ? elements.find(item => item.innerText.trim() === match.text)
+          : match.title !== undefined
+            ? elements.find(item => item.querySelector('strong')?.textContent === match.title)
+            : elements[0];
+        if (!element) return null;
         if (element.disabled) throw new Error('Cannot click disabled control');
         element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
         const rect = element.getBoundingClientRect();
@@ -125,29 +135,32 @@ async function main() {
         if (!rect.width || !rect.height || !element.contains(document.elementFromPoint(x, y))) {
           throw new Error('Control is obscured or outside the viewport');
         }
-        return { x, y }; })()`);
+        return { x, y };
+      }, `Missing pointer target: ${selector}`, 120000, [selector, match]);
       await command('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
       await command('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point });
       await command('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point });
       await pause(120);
     }
     async function click(selector) {
-      await pointer(`document.querySelector(${JSON.stringify(selector)})`);
+      await pointer(selector);
     }
     async function button(text) {
-      await until(`[...document.querySelectorAll('button')].some(b => b.innerText.trim() === ${JSON.stringify(text)})`, `Missing button: ${text}`);
-      await pointer(`[...document.querySelectorAll('button')].find(b => b.innerText.trim() === ${JSON.stringify(text)})`);
+      await pointer('button', { text });
     }
     async function screenshot(name) {
       const result = await command('Page.captureScreenshot', { format: 'png' });
       fs.writeFileSync(path.join(evidence, `${name}.png`), Buffer.from(result.data, 'base64'));
     }
     async function language(locale) {
-      await evaluate(`(() => { const s = document.querySelector('[data-testid="language-select"]'); s.value = ${JSON.stringify(locale)}; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-      await until(`document.documentElement.lang === ${JSON.stringify(locale)}`, `Locale failed: ${locale}`);
+      await callFunction(function (locale) {
+        const s = document.querySelector('[data-testid="language-select"]');
+        s.value = locale; s.dispatchEvent(new Event('change', { bubbles: true }));
+      }, locale);
+      await until(function (locale) { return document.documentElement.lang === locale; }, `Locale failed: ${locale}`, 120000, [locale]);
     }
     async function home() { await evaluate(`location.hash = '#/'`); await until(`document.querySelectorAll('[data-testid^="mode-"]').length === 3`, 'Home did not show three workflows'); }
-    async function album(name) { await home(); await pointer(`[...document.querySelectorAll('button')].find(b => b.querySelector('strong')?.textContent === ${JSON.stringify(name)})`); await pause(150); }
+    async function album(name) { await home(); await pointer('button', { title: name }); await pause(150); }
     await command('Runtime.enable');
     await command('Page.enable');
     await until(`document.querySelector('[data-testid="language-select"]')`, 'Language selector did not appear');
@@ -299,14 +312,14 @@ async function main() {
         const dictionary = JSON.parse(fs.readFileSync(path.join(appRoot, '../shared/src/i18n/locales', `${locale}.json`), 'utf8'));
         assert.equal(await evaluate(`document.querySelector('h1').textContent`), dictionary['home.title']);
         for (const [mode, keys] of Object.entries({ dedup: ['home.modes.dedup.title', 'home.modes.dedup.shortSubtitle', 'dedup.startCheck'], culling: ['home.modes.culling.title', 'home.modes.culling.shortSubtitle', 'culling.startCulling'], yearInReview: ['yearInReview.title', 'yearInReviewSubtitle', 'yearInReview.generate'] })) {
-          const text = await evaluate(`document.querySelector('[data-testid="mode-${mode}"]').innerText`);
+          const text = await callFunction(function (mode) { return document.querySelector(`[data-testid="mode-${mode}"]`).innerText; }, mode);
           for (const key of keys) assert(text.includes(dictionary[key]), `${locale}: untranslated home card ${key}`);
         }
         assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, `${locale}/${width}: horizontal overflow`);
         await screenshot(`home-${locale}-${width}`);
         await click('[data-testid="mode-dedup"]');
         await until(`document.querySelector('[data-testid="dedupe-start"]')`, `${locale}: dedupe setup missing`);
-        assert(await evaluate(`document.body.innerText.includes(${JSON.stringify(dictionary['dedup.checkQuantity'])})`));
+        assert(await callFunction(function (text) { return document.body.innerText.includes(text); }, dictionary['dedup.checkQuantity']));
         await screenshot(`dedupe-${locale}-${width}`);
       }
     }
