@@ -4,6 +4,12 @@
 
 An offline Windows photo organizer with duplicate review, manual review and a twelve-month photo review. The current desktop source is **0.2.2 without AI features**, licensed under MIT. The public repository history is retained.
 
+## Product preview
+
+![AlbumDone 0.2.2 photo library with duplicate review, manual review and Year in Review](docs/assets/screenshots/albumdone-library-en.png)
+
+The current Windows desktop interface, captured from the 0.2.2 packaged application using a separate demo library. The [Chinese introduction](README.zh-CN.md#产品截图) shows the Chinese interface. Screenshot provenance is recorded [here](docs/assets/screenshots/README.md).
+
 ## Version 0.2.2
 
 The [release record](CHANGELOG.md) records security maintenance in 0.2.2 and the previous 0.2.1 artifact's identity and acceptance. No new GitHub Release or signed installer is published by this source update; older release downloads belong to their listed versions.

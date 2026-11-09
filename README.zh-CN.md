@@ -4,6 +4,12 @@
 
 离线 Windows 照片整理工具，当前桌面源码为 **0.2.2 无 AI 版**，使用 MIT 许可证，保留公开仓库历史。
 
+## 产品截图
+
+![正好相册 0.2.2 中文首页，展示自动去重、手动筛选和年度回顾](docs/assets/screenshots/albumdone-library-zh-CN.png)
+
+当前 Windows 桌面界面，取自 0.2.2 安装包内程序，使用独立演示图库。[英文介绍](README.md#product-preview)展示英文界面。截图来源见[此处](docs/assets/screenshots/README.md)。
+
 ## 0.2.2 当前状态
 
 [发布记录](CHANGELOG.md)列出 0.2.2 安全维护内容，以及此前 0.2.1 的安装包身份和验收范围。本次源码更新不创建 GitHub Release 或发布签名包；历史 Release 下载仍对应各自标注的旧版本。
