@@ -2,49 +2,45 @@
 
 # 正好相册 AlbumDone
 
-离线 Windows 照片整理工具，当前桌面源码为 **0.2.2 无 AI 版**，使用 MIT 许可证，保留公开仓库历史。
+在自己的电脑上整理照片。正好相册是 **Link Vector Pty Ltd** 开发的免费开源 Windows 照片整理工具，提供自动去重、手动筛选和年度回顾。照片在本地处理，无需注册账号，也无需上传照片库。
 
 ## 产品截图
 
-![正好相册 0.2.2 中文首页，展示自动去重、手动筛选和年度回顾](docs/assets/screenshots/albumdone-library-zh-CN.png)
+![正好相册中文首页，展示自动去重、手动筛选和年度回顾](docs/assets/screenshots/albumdone-library-zh-CN.png)
 
-当前 Windows 桌面界面，取自 0.2.2 安装包内程序，使用独立演示图库。[英文介绍](README.md#product-preview)展示英文界面。截图来源见[此处](docs/assets/screenshots/README.md)。
+Windows 桌面界面，使用演示图库展示。另见[英文界面](README.md#product-preview)。
 
-## 0.2.2 当前状态
+## 主要功能
 
-[发布记录](CHANGELOG.md)列出 0.2.2 安全维护内容，以及此前 0.2.1 的安装包身份和验收范围。本次源码更新不创建 GitHub Release 或发布签名包；历史 Release 下载仍对应各自标注的旧版本。
+- **自动去重**：逐组比较相似照片，选择保留哪张，也可整组保留。通过大图预览看清照片后再决定。
+- **手动筛选**：使用上一张、下一张按钮或键盘浏览，标记保留或删除，支持撤销审阅选择，并可分批继续整理。
+- **年度回顾**：选择过去十二个月或上一自然年，每月挑选一张照片，将当前选择保存为 JPG。
 
-0.2.2 安装包**尚未签名**。该确切包内的程序已通过 8 组运行场景验收，包括 15 种语言排版、JPG 导出及合成照片实际删除；发布记录列出源码和 SHA-256。系统安装、覆盖安装和升级尚未验收。SignPath 签名是后续独立的发布步骤，详见[代码签名政策](CODE_SIGNING_POLICY.md)。
+内置 15 种界面语言，提供缩略图、本地审阅进度恢复和 Windows 回收站选项。当前桌面版采用本地照片处理，不包含 AI 功能。
 
-0.2.2 锁文件在 2026-11-08 UTC 的完整依赖审计中报告 0 个受影响依赖项，检查包含 Electron 和构建工具；本地 lint、类型及单元/集成检查通过，GitHub 对运行源码的复扫报告 Dependabot 和 CodeQL 开放告警均为 0。验收范围与来源详见[发布记录](CHANGELOG.md)。这些结果不代表不存在任何漏洞。
+## 版本与下载
 
-## 三个主要功能
+当前源码版本为 **0.2.2**，面向 **Windows x64**。0.2.2 安装包尚未发布到 GitHub Releases。现有的 [v0.1.2-beta.10 下载](https://github.com/BlueVenn6/AlbumDone/releases/tag/v0.1.2-beta.10)是旧测试版，不包含当前版本的更新。
 
-- **自动去重**：选择检查数量，逐组预览，默认保留一张，可更换保留照片或整组保留；确认后才执行删除。大图只是组内某张照片的预览。检查完成后可返回数量选择，并保留文件夹进度。
-- **手动筛选**：单张或网格查看，支持上一张/下一张按钮、标记保留/删除、撤销及键盘操作；浏览照片不会自动标记为已审阅，完成后可选择下一批。
-- **年度回顾**：过去十二个月或上一自然年，每月一张，可更换同月候选照片和空月份寄语，保存当前实际选择的 JPG。
+[发布记录](CHANGELOG.md)中的 0.2.2 安装包尚未签名；包内程序已进行运行检查，系统安装和升级尚未验证。文件校验值及具体检查范围见发布记录，签名进展见[代码签名政策](CODE_SIGNING_POLICY.md)。
 
-内置 15 种语言，可切换。保留文件夹、缩略图、本地任务恢复和回收站功能。本版移除模型设置、模型请求、密钥管理、截图指令和 OCR；照片筛选需要的本地截图文件名识别仍保留。
+## 开始使用
 
-## 开发、验收与打包
+1. 选择本地照片文件夹。
+2. 进入自动去重、手动筛选或年度回顾。
+3. 检查选择后确认删除，或保存年度回顾图片。
 
-要求 Windows x64、Node 22.23.4、npm 12.2.2 和 Git。完整命令见 [英文说明](README.md)。
+标记待删除不会立即删除照片。相似度建议需要您自行核对；重要照片请保留备份，永久删除无法在本应用内撤销。批次规则、具体操作和文件处理说明见[操作指南](docs/USER_GUIDE.md)。
 
-```powershell
-npm ci
-npm run lint
-npm run typecheck
-npm run test
-npm --workspace @photo-manager/desktop run build
-npm --workspace @photo-manager/desktop run test:e2e
-```
+## 帮助与隐私
 
-生产界面验收使用人工生成的照片和独立的应用数据目录，不读取真实相册。提交已经测试的源码后，运行：
+- [产品网站](https://linkvectorapp.com/albumdone)
+- [使用支持](https://linkvectorapp.com/albumdone-support) · [info@linkvectorapp.com](mailto:info@linkvectorapp.com)
+- [隐私政策](PRIVACY.md) · [文件操作提示](DISCLAIMER.md)
+- [反馈问题](https://github.com/BlueVenn6/AlbumDone/issues) · [私下报告安全问题](SECURITY.md)
 
-```powershell
-npm --workspace @photo-manager/desktop run package
-```
+## 开发与贡献
 
-输出位于 `packages/desktop/release`，包含嵌入源码身份的应用、安装器和 SHA-256 构建记录。源码测试、构建、打包与实际安装包验收分别记录，不互相替代。
+环境配置、开发、测试和打包步骤见[贡献指南](CONTRIBUTING.md#简体中文)。技术说明另见[构建来源](RELEASE_SOURCES.md)、[性能检查](docs/PERFORMANCE.md)和[截图来源](docs/assets/screenshots/README.md)。
 
-参见 [0.2.1 发布记录](CHANGELOG.md)、[操作说明](docs/USER_GUIDE.md)、[隐私说明](PRIVACY.md)、[构建来源](RELEASE_SOURCES.md)、[代码签名政策](CODE_SIGNING_POLICY.md)。手机端在独立私有仓库维护。禁止将手机签名材料放入本公开仓库。许可证：[MIT](LICENSE)。
+许可证：[MIT](LICENSE)。

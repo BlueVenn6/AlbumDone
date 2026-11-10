@@ -6,11 +6,12 @@ signing.
 
 ## Current Status
 
-The existing 0.2.1 installer is unsigned. SignPath approval, repository
-configuration and a successful signed release have not been verified for this
-version. Until signing is complete, releases must be identified as unsigned and
-accompanied by a SHA-256 checksum. A release must not claim to be SignPath-signed unless both the
-installed `AlbumDone.exe` and the distributed installer have valid
+The recorded 0.2.2 Windows x64 installer is unsigned and has not been published
+to GitHub Releases. SignPath approval, repository configuration and a successful
+signed release have not been verified. Until signing is complete, releases must
+be identified as unsigned and accompanied by a SHA-256 checksum. A release must
+not claim to be SignPath-signed unless both the installed `AlbumDone.exe` and
+the distributed installer have valid
 Authenticode signatures.
 
 After approval, the release page and this policy will include the required
@@ -53,7 +54,7 @@ These are the intended workflow checks, not evidence that a signed release has
 already passed. Before this workflow is used for production, it must preserve
 the source manifest and build record described in [release provenance](RELEASE_SOURCES.md),
 enforce SignPath's required product metadata restrictions, and pass end-to-end
-validation against the exact signed installer. See the [0.2.1 release record](CHANGELOG.md)
+validation against the exact signed installer. See the [release record](CHANGELOG.md)
 for the scope of the existing unsigned artifact's acceptance.
 
 ## Required GitHub Configuration

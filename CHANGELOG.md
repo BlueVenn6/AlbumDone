@@ -48,9 +48,9 @@ test call to an equivalent CSS selector, preserving the photo-replacement
 assertion. The complete test then passed against the same installer. No runtime
 source, dependency lock, production output or installer was changed or rebuilt.
 
-This is **State D for the recorded packaged-runtime checks**. Actual system
+The recorded packaged-application checks passed. Actual system
 installation, overwriting a previous installation, upgrades and SignPath signing
-remain unvalidated (**State C for the installer**). The previous 0.2.1 artifact
+remain unvalidated. The previous 0.2.1 artifact
 is unchanged. No new GitHub Release is created by this source update.
 
 ### 简体中文
@@ -72,8 +72,8 @@ Dependabot 和 CodeQL 开放告警均为 0。确切 0.2.2 安装包身份见上�
 
 首轮验收因测试脚本漏改一处控件定位调用而停止；修正为等价 CSS 选择器，保留
 原有换图断言后，使用同一个安装包通过完整验收。未改应用源码、锁文件或包内容，
-没有重复打包。包内程序检查为 State D；系统安装、覆盖、升级及签名尚未验收，
-安装器仍为 State C。0.2.1 安装包不变，本次不创建 GitHub Release。
+没有重复打包。上述包内程序运行检查通过；系统安装、覆盖、升级及签名尚未验收。
+0.2.1 安装包不变，本次不创建 GitHub Release。
 
 # AlbumDone 0.2.1
 
@@ -131,16 +131,15 @@ languages, a saved Chinese JPG, and recycle-bin deletion of synthetic test
 photos. The final runtime report records eight scenario groups and no runtime
 errors.
 
-This is **State D for the recorded packaged-runtime checks**. It is not a claim
-that installation or upgrades passed. The installer options and directory
-pages were inspected, then cancelled before installation. System installation,
-overwriting an existing version and upgrades remain **State C**. SignPath
-approval/configuration and a signed release have not been validated. The
+The recorded packaged-application checks passed. The installer options and
+directory pages were inspected, then cancelled before installation. System
+installation, overwriting an existing version and upgrades remain unvalidated.
+SignPath approval/configuration and a signed release have not been validated. The
 checks do not cover every Windows version, display setup or photo format.
 
 ### Dependency audit: 2026-11-08 UTC
 
-For the current lockfile, `npm audit --omit=dev --json` reported no affected
+For the 0.2.1 lockfile, `npm audit --omit=dev --json` reported no affected
 packages. The full `npm audit --json` reported **18 affected dependency entries:
 1 critical, 8 high and 9 moderate**. These are npm's package-level counts, not
 counts of independently confirmed application exploits.
@@ -187,13 +186,13 @@ Git 历史保留旧版本，当前应用不包含这些接入。
 安装包解出的 231 个文件与打包输出一致。记录覆盖鼠标点击、15 种语言、实际保存的中文 JPG，
 以及合成测试照片的系统回收站删除。最终运行报告包含 8 类场景，未记录运行异常。
 
-上述已记录的包内运行检查属于 **State D**。安装器只查看了选项页和目录页，随后在安装前取消；
-系统安装、覆盖安装和升级仍属于 **State C**。SignPath 审批、配置和签名版本尚未验证，
+上述包内程序运行检查通过。安装器只查看了选项页和目录页，随后在安装前取消；
+系统安装、覆盖安装和升级尚未验收。SignPath 审批、配置和签名版本尚未验证，
 也没有覆盖所有 Windows 版本、显示器组合或照片格式。
 
 ### 依赖审计：2026-11-08 UTC
 
-当前锁文件的 `npm audit --omit=dev --json` 未报告受影响的依赖项；
+0.2.1 锁文件的 `npm audit --omit=dev --json` 未报告受影响的依赖项；
 全量 `npm audit --json` 报告 **18 个受影响的依赖项：1 项严重、8 项高风险、9 项中风险**。
 这是 npm 按依赖项统计的告警数量，不代表已经独立确认同等数量的应用可利用漏洞。
 

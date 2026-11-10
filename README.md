@@ -2,66 +2,45 @@
 
 # AlbumDone
 
-An offline Windows photo organizer with duplicate review, manual review and a twelve-month photo review. The current desktop source is **0.2.2 without AI features**, licensed under MIT. The public repository history is retained.
+Organize your photos on your own computer. AlbumDone is a free, open-source Windows photo organizer by **Link Vector Pty Ltd**, with duplicate review, manual review and Year in Review. Photo processing runs locally, without an account or uploading your library.
 
 ## Product preview
 
-![AlbumDone 0.2.2 photo library with duplicate review, manual review and Year in Review](docs/assets/screenshots/albumdone-library-en.png)
+![AlbumDone photo library with duplicate review, manual review and Year in Review](docs/assets/screenshots/albumdone-library-en.png)
 
-The current Windows desktop interface, captured from the 0.2.2 packaged application using a separate demo library. The [Chinese introduction](README.zh-CN.md#产品截图) shows the Chinese interface. Screenshot provenance is recorded [here](docs/assets/screenshots/README.md).
+The Windows desktop interface with a demo photo library. See the [Chinese interface](README.zh-CN.md#产品截图).
 
-## Version 0.2.2
+## What you can do
 
-The [release record](CHANGELOG.md) records security maintenance in 0.2.2 and the previous 0.2.1 artifact's identity and acceptance. No new GitHub Release or signed installer is published by this source update; older release downloads belong to their listed versions.
+- **Review similar photos:** compare grouped photos, choose which to keep, or keep the whole group. A large preview lets you inspect a photo before deciding.
+- **Sort photos manually:** browse with Previous/Next buttons or keyboard shortcuts, mark photos to keep or delete, and undo review decisions. Continue through a folder in batches.
+- **Create a Year in Review:** choose the past twelve months or last calendar year, pick a photo for each month, and save your selection as a JPG.
 
-The 0.2.2 installer is **unsigned**. Its exact packaged application passed eight recorded scenario groups, including fifteen-language layouts, JPG export and synthetic-photo deletion. The release record identifies its source and SHA-256. System installation, overwriting an existing version and upgrades have not been validated. SignPath signing remains a separate release step; see the [Code signing policy](CODE_SIGNING_POLICY.md).
+The app includes fifteen interface languages, thumbnails, local review-progress recovery and a Windows Recycle Bin option. The current desktop version uses local photo processing and does not include AI features.
 
-The 0.2.2 lockfile's full dependency audit reports zero affected entries on 2026-11-08 UTC, including checks of Electron and build tools. Local lint, typecheck and unit/integration tests passed; GitHub's runtime-source rescan reported zero open Dependabot and CodeQL alerts. Scope and provenance are recorded in the [release record](CHANGELOG.md); these results are not a guarantee against all vulnerabilities.
+## Version and downloads
 
-## Workflows
+The current source version is **0.2.2**, targeting **Windows x64**. A 0.2.2 installer has not yet been published to GitHub Releases. The existing [v0.1.2-beta.10 download](https://github.com/BlueVenn6/AlbumDone/releases/tag/v0.1.2-beta.10) is an older prerelease and does not contain the current version's changes.
 
-- Duplicate review: choose a quantity, inspect each group, change the photo to keep or keep the whole group. The large image is a preview of one group member. Review selections before confirming deletion. Completed batches return to quantity selection and retain folder progress.
-- Manual review: previous/next buttons, keep/delete decisions, undo, keyboard shortcuts, grid and single-photo views. Browsing a photo does not mark it as reviewed. Choose another batch after completing a review.
-- Year in Review: past twelve months or last calendar year; select a different candidate within a month, change empty-month quotes, and save the exact current choices as a local JPG.
-- Fifteen bundled languages, with a language selector. Local folder selection, thumbnails, checkpoint recovery and the recycle bin remain available.
+The 0.2.2 installer recorded in the [changelog](CHANGELOG.md) is unsigned. Its packaged application has been tested; system installation and upgrades remain unverified. See the changelog for checksums and validation scope, and the [code signing policy](CODE_SIGNING_POLICY.md) for signing status.
 
-This version removes provider settings, model requests, API-key handling, screenshot instruction workflows and OCR. Screenshot filename detection remains a local utility for photo selection.
+## Getting started
 
-## Development
+1. Choose a local photo folder.
+2. Open Auto Dedup, Manual Culling or Year in Review.
+3. Review your choices before confirming deletion, or save your Year in Review image.
 
-Windows x64, Node **22.23.4**, npm **12.2.2**, and Git:
+Marking a photo for deletion does not delete it immediately. Similarity suggestions need your review. Keep a backup of important photos; permanent deletion cannot be undone in AlbumDone. See the [user guide](docs/USER_GUIDE.md) for batch behavior, controls and file operations.
 
-```powershell
-npm ci
-npm run lint
-npm run typecheck
-npm run test
-npm --workspace @photo-manager/desktop run build
-npm --workspace @photo-manager/desktop run test:e2e
-npm --workspace @photo-manager/desktop run benchmark:reproducible -- 1000
-```
+## Help and privacy
 
-The Electron production acceptance test creates synthetic photos and a separate application profile. It does not use your photo library. It requires a Windows desktop session.
+- [Product website](https://linkvectorapp.com/albumdone)
+- [Support](https://linkvectorapp.com/albumdone-support) · [info@linkvectorapp.com](mailto:info@linkvectorapp.com)
+- [Privacy policy](PRIVACY.md) · [File-operation notice](DISCLAIMER.md)
+- [Report a bug](https://github.com/BlueVenn6/AlbumDone/issues) · [Report a security issue privately](SECURITY.md)
 
-```powershell
-npm run dev:desktop
-```
+## Build and contribute
 
-## Packaging and provenance
+For setup, development, testing and packaging, see [Contributing](CONTRIBUTING.md). Technical details are available in [build provenance](RELEASE_SOURCES.md), [performance checks](docs/PERFORMANCE.md) and [screenshot provenance](docs/assets/screenshots/README.md).
 
-Commit the tested source, then run:
-
-```powershell
-npm --workspace @photo-manager/desktop run package
-```
-
-The packaging script rejects a dirty Git tree, cleans generated output, builds shared/main/renderer code, embeds `build-source.json`, and creates an installer and a SHA-256 build record in `packages/desktop/release`. To run the same acceptance test against the exact packaged application:
-
-```powershell
-$env:ALBUMDONE_ACCEPTANCE_EXE = (Resolve-Path packages/desktop/release/win-unpacked/AlbumDone.exe).Path
-npm --workspace @photo-manager/desktop run test:e2e
-```
-
-A successful source test or build does not establish that an installer has passed runtime acceptance. See the [0.2.1 release record](CHANGELOG.md), [release provenance](RELEASE_SOURCES.md), [privacy](PRIVACY.md), [user guide](docs/USER_GUIDE.md), and [Code signing policy](CODE_SIGNING_POLICY.md).
-
-Mobile builds live in a separate private repository. No Android/iOS signing material belongs in this public repository. License: [MIT](LICENSE).
+License: [MIT](LICENSE).

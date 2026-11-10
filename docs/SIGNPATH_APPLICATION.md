@@ -1,7 +1,17 @@
 # Code-signing application notes
 
-The desktop 0.2.1 source contains three offline photo workflows: duplicate review, manual review and year-in-review JPG export. AI providers, cloud model interfaces, screenshot instructions and OCR have been removed. See the [0.2.1 release record](../CHANGELOG.md) for the existing unsigned artifact and acceptance scope.
+This maintainer guide describes the planned signing setup; it is not an announcement of an approved or signed release.
 
-The repository includes SignPath artifact configurations and a signing workflow as preparation. Their end-to-end operation has not been validated for 0.2.1. Public signing requires the maintainer’s approved SignPath project, repository variables and secret; their presence is not implied by local packaging. Source provenance and the required product metadata restrictions must be carried through the signing workflow. A release may claim a valid signature only after the exact installer and installed executable are checked.
+AlbumDone is developed by Link Vector Pty Ltd. The desktop 0.2.2 source provides three local photo workflows: duplicate review, manual review and Year in Review JPG export. The current version does not include AI-provider integrations or OCR. See the [release record](../CHANGELOG.md) for the unsigned artifact and validation scope.
 
-See [signing policy](../CODE_SIGNING_POLICY.md), [privacy](../PRIVACY.md), and [source provenance](../RELEASE_SOURCES.md). Do not commit signing credentials or submit a signing application automatically.
+Public project information:
+
+- Source repository: https://github.com/BlueVenn6/AlbumDone
+- Product website: https://linkvectorapp.com/albumdone
+- Support: https://linkvectorapp.com/albumdone-support
+- Contact: info@linkvectorapp.com
+- Privacy policy: [PRIVACY.md](../PRIVACY.md)
+
+The repository includes SignPath artifact configurations and a signing workflow as preparation. Their end-to-end operation has not been validated. Signing requires an approved SignPath project and the repository configuration listed in the [signing policy](../CODE_SIGNING_POLICY.md). Building locally does not establish that this setup is complete.
+
+The signing workflow needs to preserve [source provenance](../RELEASE_SOURCES.md), enforce the required product metadata restrictions, and verify signatures on the exact distributed installer and installed executable. The download page should identify the actual available version and signing status. The SignPath credit shown in the policy is for use after approval; it is not evidence of approval today.
